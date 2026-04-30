@@ -2,40 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import httpx
 import pytest
 import respx
 
-from kanbantool_mcp import server
 from kanbantool_mcp.client import KanbanToolClient
-from kanbantool_mcp.config import Config
 from kanbantool_mcp.exceptions import KanbanToolHTTPError, KanbanToolPermissionError
 from kanbantool_mcp.server import list_boards
 
-BASE_URL = "https://testacct.kanbantool.com/api/v3/"
+from .conftest import BASE_URL
+
 USERS_CURRENT_URL = f"{BASE_URL}users/current.json"
-
-
-@pytest.fixture
-def config() -> Config:
-    return Config.from_env()
-
-
-@pytest.fixture
-async def client(config: Config) -> AsyncIterator[KanbanToolClient]:
-    c = KanbanToolClient(config)
-    try:
-        yield c
-    finally:
-        await c.aclose()
-
-
-@pytest.fixture
-def _inject_client(monkeypatch: pytest.MonkeyPatch, client: KanbanToolClient) -> KanbanToolClient:
-    monkeypatch.setattr(server, "_client", client)
-    return client
 
 
 async def test_list_boards_happy_path(_inject_client: KanbanToolClient) -> None:
@@ -75,6 +52,11 @@ async def test_list_boards_happy_path(_inject_client: KanbanToolClient) -> None:
     assert second.use_swimlanes is None
     assert second.is_archived is None
     assert second.user_role is None
+
+    # The compact /users/current payload omits detail-only collections.
+    assert first.columns == []
+    assert first.swimlanes == []
+    assert first.custom_fields == []
 
 
 async def test_list_boards_empty(_inject_client: KanbanToolClient) -> None:
