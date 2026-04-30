@@ -203,6 +203,19 @@ async def test_update_task_500_raises_http_error(_inject_client: KanbanToolClien
     assert not isinstance(err, KanbanToolValidationError)
 
 
+async def test_update_task_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    """404 (unknown task id) surfaces as the base ``KanbanToolHTTPError`` —
+    not promoted to the validation subclass."""
+    with respx.mock() as router:
+        router.put(TASK_URL).mock(return_value=httpx.Response(404, text="task not found"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await update_task(task_id=TASK_ID, name="x")
+
+    err = exc_info.value
+    assert err.status_code == 404
+    assert not isinstance(err, KanbanToolValidationError)
+
+
 async def test_update_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """PUT hits ``tasks/{id}.json`` exactly — no double ``.json`` suffix, no
     query string, no trailing slash artifact."""

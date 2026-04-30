@@ -189,3 +189,20 @@ async def test_add_subtask_url_shape(_inject_client: KanbanToolClient) -> None:
     request = route.calls.last.request
     assert request.method == "POST"
     assert str(request.url) == SUBTASKS_URL
+
+
+async def test_add_subtask_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.post(SUBTASKS_URL).mock(return_value=httpx.Response(404, text="task not found"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await add_subtask(task_id=TASK_ID, title="x")
+    assert exc_info.value.status_code == 404
+    assert not isinstance(exc_info.value, KanbanToolValidationError)
+
+
+async def test_add_subtask_500_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.post(SUBTASKS_URL).mock(return_value=httpx.Response(500, text="server exploded"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await add_subtask(task_id=TASK_ID, title="x")
+    assert exc_info.value.status_code == 500

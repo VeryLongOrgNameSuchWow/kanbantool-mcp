@@ -93,6 +93,14 @@ async def test_archive_task_401_raises_permission_error(
             await archive_task(task_id=TASK_ID)
 
 
+async def test_archive_task_500_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.patch(TASK_URL).mock(return_value=httpx.Response(500, text="server exploded"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await archive_task(task_id=TASK_ID)
+    assert exc_info.value.status_code == 500
+
+
 async def test_archive_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """PATCH hits ``tasks/{id}.json`` exactly — no ``/archive`` path segment,
     no double ``.json``, no query string, no trailing-slash artifact."""

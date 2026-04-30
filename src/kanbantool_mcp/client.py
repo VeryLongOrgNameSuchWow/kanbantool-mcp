@@ -89,8 +89,15 @@ def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
             body_excerpt=body_excerpt,
             field_errors=_parse_field_errors(body_text),
         )
+    generic_message = f"Kanban Tool API returned HTTP {status} for {method} {path}"
+    if status == 404:
+        message = f"no such task/board (or you lack access). {generic_message}"
+    elif status >= 500:
+        message = f"Kanban Tool API is having issues; retry shortly. {generic_message}"
+    else:
+        message = generic_message
     raise KanbanToolHTTPError(
-        f"Kanban Tool API returned HTTP {status} for {method} {path}",
+        message,
         status_code=status,
         body_excerpt=body_excerpt,
     )

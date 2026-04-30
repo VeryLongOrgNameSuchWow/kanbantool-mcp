@@ -56,6 +56,10 @@ async def test_404_raises_http_error_with_body(client: KanbanToolClient) -> None
         assert exc_info.value.status_code == 404
         assert exc_info.value.body_excerpt
         assert "not found" in exc_info.value.body_excerpt
+        rendered = str(exc_info.value)
+        assert "no such task/board (or you lack access)" in rendered
+        # Path is preserved so the LLM still sees which resource was missing.
+        assert "boards/999.json" in rendered
 
 
 async def test_500_raises_http_error(client: KanbanToolClient) -> None:
@@ -64,6 +68,9 @@ async def test_500_raises_http_error(client: KanbanToolClient) -> None:
         with pytest.raises(KanbanToolHTTPError) as exc_info:
             await client.request("GET", "boards/1")
         assert exc_info.value.status_code == 500
+        rendered = str(exc_info.value)
+        assert "Kanban Tool API is having issues; retry shortly." in rendered
+        assert "boards/1.json" in rendered
 
 
 async def test_transport_error_then_success_retries(client: KanbanToolClient) -> None:

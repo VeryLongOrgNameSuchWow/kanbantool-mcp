@@ -159,6 +159,14 @@ async def test_move_task_401_raises_permission_error(_inject_client: KanbanToolC
             await move_task(task_id=TASK_ID, column_id=100)
 
 
+async def test_move_task_500_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.patch(TASK_URL).mock(return_value=httpx.Response(500, text="server exploded"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await move_task(task_id=TASK_ID, column_id=100)
+    assert exc_info.value.status_code == 500
+
+
 async def test_move_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """PATCH hits ``tasks/{id}.json`` exactly — no double ``.json`` suffix, no
     query string, no trailing slash artifact."""
