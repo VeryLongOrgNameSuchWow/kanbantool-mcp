@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -55,3 +58,22 @@ class Board(BaseModel):
     columns: list[Column] = Field(default_factory=list, alias="workflow_stages")
     swimlanes: list[Swimlane] = Field(default_factory=list)
     custom_fields: list[CustomField] = Field(default_factory=list, alias="card_template")
+
+
+class ChangelogEntry(BaseModel):
+    """A single entry from a board's changelog feed.
+
+    Fields beyond ``id`` and ``created_at`` are optional — the API's exact
+    shape varies by event type, and we keep this model permissive so the
+    poller never blows up on an unfamiliar action."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    created_at: datetime
+    action: str | None = None
+    actor_id: int | None = None
+    actor_name: str | None = None
+    target_type: str | None = None
+    target_id: int | None = None
+    details: dict[str, Any] | None = None
