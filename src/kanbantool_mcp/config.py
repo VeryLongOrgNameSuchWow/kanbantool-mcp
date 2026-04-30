@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
 class Config:
     domain: str
-    api_token: str
+    api_token: str = field(repr=False)
 
     @property
     def base_url(self) -> str:
