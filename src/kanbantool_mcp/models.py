@@ -104,6 +104,24 @@ class Task(BaseModel):
     updated_at: str | None = None
 
 
+class Subtask(BaseModel):
+    """A subtask attached to a task.
+
+    Mirrors the GET/POST ``/tasks/{id}/subtasks.json`` payload. ``name`` is
+    the API-native field — kept verbatim rather than aliased to ``title`` so
+    there's no rename to maintain on either edge.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    name: str
+    is_completed: bool | None = None
+    completed_at: str | None = None
+    position: int | None = None
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtask payload").
+
+
 class ChangelogEntry(BaseModel):
     """A single entry from a board's changelog feed.
 
