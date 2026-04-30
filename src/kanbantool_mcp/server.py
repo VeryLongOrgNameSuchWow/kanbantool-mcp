@@ -316,6 +316,10 @@ async def archive_task(task_id: int) -> Task:
     Raises ``KanbanToolHTTPError`` on 4xx/5xx (including a 404 if the task
     id is unknown), and ``KanbanToolPermissionError`` on 401/403.
     """
+    # Sentinel-action family on PATCH /tasks/{id}.json: "archive",
+    # "unarchive", "delete", "undelete". If we ever add unarchive_task /
+    # delete_task / restore_task, copy this 2-line shape — don't generalize
+    # into a helper until there's a second caller (YAGNI).
     body = {"_action": "archive"}
     data = await _get_client().request("PATCH", f"tasks/{task_id}", json=body)
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
