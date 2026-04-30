@@ -190,6 +190,35 @@ async def test_create_task_422_body_scrubs_bearer_token(
     assert "Bearer ***" in exc_info.value.body_excerpt
 
 
+async def test_create_task_422_field_errors_scrub_bearer_token(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A bearer token leaked inside a 422 JSON field-error message must be
+    scrubbed out of ``field_errors`` and the rendered ``__str__`` — covers the
+    JSON-decoded path, not just the raw ``body_excerpt`` fallback."""
+    leaked_token = "leaked-token-foo-xyz"
+    error_body = {
+        "errors": {
+            "name": [f"can't be blank (Authorization: Bearer {leaked_token})"],
+        }
+    }
+    with respx.mock() as router:
+        router.post(TASKS_URL).mock(
+            return_value=httpx.Response(422, json=error_body),
+        )
+        with pytest.raises(KanbanToolValidationError) as exc_info:
+            await create_task(name="", board_id=7)
+
+    err = exc_info.value
+    rendered_field_errors = json.dumps(err.field_errors)
+    assert leaked_token not in rendered_field_errors
+    assert "Bearer ***" in rendered_field_errors
+
+    rendered = str(err)
+    assert leaked_token not in rendered
+    assert "Bearer ***" in rendered
+
+
 async def test_create_task_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
     with respx.mock() as router:
         router.post(TASKS_URL).mock(

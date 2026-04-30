@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
+_BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+\S+")
+
 
 class KanbanToolError(Exception):
     """Base class for all Kanban Tool client errors."""
@@ -46,7 +50,11 @@ class KanbanToolValidationError(KanbanToolHTTPError):
         rendered = "; ".join(
             f"{field}: {', '.join(messages)}" for field, messages in self.field_errors.items()
         )
-        return f"{base} {rendered}"
+        # Belt-and-suspenders: scrub again here so direct construction of the
+        # exception with un-scrubbed input cannot leak a bearer token through
+        # the rendered string. The client construction path scrubs on the way
+        # in; this is a second line of defense for callers that bypass it.
+        return _BEARER_PATTERN.sub("Bearer ***", f"{base} {rendered}")
 
 
 class KanbanToolTransportError(KanbanToolError):

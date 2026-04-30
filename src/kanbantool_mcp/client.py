@@ -35,7 +35,12 @@ def _parse_field_errors(body: str) -> dict[str, list[str]]:
     """Parse a 422 body's Rails-idiomatic ``{"errors": {field: [msg, ...]}}``
     envelope. Returns an empty dict if the body is not JSON, the envelope is
     missing, or the values are not the expected list-of-strings shape — the
-    caller still surfaces the raw (scrubbed) excerpt in that case."""
+    caller still surfaces the raw (scrubbed) excerpt in that case.
+
+    Both message strings and field keys are run through ``_scrub_secrets`` so
+    a token leaked inside the JSON envelope (e.g. an upstream proxy echoing
+    ``Authorization: Bearer X`` into a field message) cannot survive into
+    ``KanbanToolValidationError.field_errors`` or its ``__str__`` output."""
     try:
         decoded = json.loads(body)
     except (json.JSONDecodeError, ValueError):
@@ -49,10 +54,11 @@ def _parse_field_errors(body: str) -> dict[str, list[str]]:
     for field, messages in errors.items():
         if not isinstance(field, str):
             continue
+        scrubbed_field = _scrub_secrets(field)
         if isinstance(messages, list):
-            parsed[field] = [str(m) for m in messages]
+            parsed[scrubbed_field] = [_scrub_secrets(str(m)) for m in messages]
         else:
-            parsed[field] = [str(messages)]
+            parsed[scrubbed_field] = [_scrub_secrets(str(messages))]
     return parsed
 
 
@@ -74,13 +80,14 @@ def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
             "Kanban Tool API denied the request as forbidden (403). "
             "The token does not have permission for this resource."
         )
-    body_excerpt = _scrub_secrets(response.text)[:_BODY_EXCERPT_LIMIT]
+    body_text = response.text
+    body_excerpt = _scrub_secrets(body_text)[:_BODY_EXCERPT_LIMIT]
     if status == 422:
         raise KanbanToolValidationError(
             f"Kanban Tool API rejected {method} {path} as invalid (422).",
             status_code=422,
             body_excerpt=body_excerpt,
-            field_errors=_parse_field_errors(response.text),
+            field_errors=_parse_field_errors(body_text),
         )
     raise KanbanToolHTTPError(
         f"Kanban Tool API returned HTTP {status} for {method} {path}",
