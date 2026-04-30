@@ -25,7 +25,11 @@ class Column(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, serialize_by_alias=True)
 
     id: int
-    name: str
+    # Live API returns ``null`` for the synthetic root stage that parents the
+    # real columns (the one whose ``parent_id is None`` and ``lane_type is None``).
+    # Keep the field nullable so the full tree validates; consumers filter
+    # leaves via ``parent_id`` if they want only display columns.
+    name: str | None = None
     position: int | None = None
     parent_id: int | None = None
     wip_limit: int | None = None

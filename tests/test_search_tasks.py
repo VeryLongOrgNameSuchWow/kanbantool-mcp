@@ -14,10 +14,17 @@ from .conftest import BASE_URL
 
 SEARCH_URL = f"{BASE_URL}tasks/search.json"
 
+# Tests that don't care about returned tasks just need a well-formed empty
+# envelope — the tool always paginates so the response is always wrapped.
+_EMPTY_RESPONSE = {
+    "results": [],
+    "pagination": {"results_count": 0, "page": 1, "pages_count": 0},
+}
+
 
 async def test_search_tasks_happy_path(_inject_client: KanbanToolClient) -> None:
     payload = {
-        "tasks": [
+        "results": [
             {
                 "id": 1,
                 "name": "Ship release",
@@ -35,7 +42,8 @@ async def test_search_tasks_happy_path(_inject_client: KanbanToolClient) -> None
                 "board_id": 7,
                 "priority": 1,
             },
-        ]
+        ],
+        "pagination": {"results_count": 2, "page": 1, "pages_count": 1},
     }
     with respx.mock(assert_all_called=True) as router:
         router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=payload))
@@ -63,7 +71,7 @@ async def test_search_tasks_dsl_passthrough_unmodified(
     no extra quoting, no operator splitting."""
     raw_query = '@alice priority:high tags:"bug,urgent"'
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json={"tasks": []}))
+        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=_EMPTY_RESPONSE))
         await search_tasks(query=raw_query)
 
     request = route.calls.last.request
@@ -74,7 +82,7 @@ async def test_search_tasks_omits_board_id_when_none(
     _inject_client: KanbanToolClient,
 ) -> None:
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json={"tasks": []}))
+        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=_EMPTY_RESPONSE))
         await search_tasks(query="name:foo")
 
     request = route.calls.last.request
@@ -85,7 +93,7 @@ async def test_search_tasks_forwards_board_id_when_provided(
     _inject_client: KanbanToolClient,
 ) -> None:
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json={"tasks": []}))
+        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=_EMPTY_RESPONSE))
         await search_tasks(query="name:foo", board_id=42)
 
     request = route.calls.last.request
@@ -94,7 +102,7 @@ async def test_search_tasks_forwards_board_id_when_provided(
 
 async def test_search_tasks_empty_results(_inject_client: KanbanToolClient) -> None:
     with respx.mock(assert_all_called=True) as router:
-        router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json={"tasks": []}))
+        router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=_EMPTY_RESPONSE))
         results = await search_tasks(query="name:nothing-matches")
 
     assert results == []
@@ -102,7 +110,7 @@ async def test_search_tasks_empty_results(_inject_client: KanbanToolClient) -> N
 
 async def test_search_tasks_pagination_forwarded(_inject_client: KanbanToolClient) -> None:
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json={"tasks": []}))
+        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=_EMPTY_RESPONSE))
         await search_tasks(query="name:foo", limit=10, page=2)
 
     params = route.calls.last.request.url.params
@@ -113,7 +121,7 @@ async def test_search_tasks_pagination_forwarded(_inject_client: KanbanToolClien
 async def test_search_tasks_limit_is_clamped_to_50(_inject_client: KanbanToolClient) -> None:
     """Hallucinated huge limits must be capped before they hit the API."""
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json={"tasks": []}))
+        route = router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=_EMPTY_RESPONSE))
         await search_tasks(query="name:foo", limit=200)
 
     assert route.calls.last.request.url.params["limit"] == "50"
@@ -143,14 +151,15 @@ async def test_search_tasks_drops_unknown_task_fields(
     """Confirms ``extra="ignore"`` round-trip — unknown task fields are
     silently dropped rather than failing validation."""
     payload = {
-        "tasks": [
+        "results": [
             {
                 "id": 99,
                 "name": "Round trip",
                 "speculative_future_field": {"nested": True},
                 "another_unknown": [1, 2, 3],
             }
-        ]
+        ],
+        "pagination": {"results_count": 1, "page": 1, "pages_count": 1},
     }
     with respx.mock(assert_all_called=True) as router:
         router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=payload))
