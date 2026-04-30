@@ -14,6 +14,7 @@ from .exceptions import (
     KanbanToolHTTPError,
     KanbanToolPermissionError,
     KanbanToolTransportError,
+    KanbanToolValidationError,
 )
 
 _BODY_EXCERPT_LIMIT = 200
@@ -28,6 +29,64 @@ def _scrub_secrets(text: str) -> str:
     Kanban Tool API uses bearer auth exclusively, so this covers the realistic
     leak path (upstream proxy/WAF echoing the Authorization header)."""
     return _BEARER_PATTERN.sub("Bearer ***", text)
+
+
+def _parse_field_errors(body: str) -> dict[str, list[str]]:
+    """Parse a 422 body's Rails-idiomatic ``{"errors": {field: [msg, ...]}}``
+    envelope. Returns an empty dict if the body is not JSON, the envelope is
+    missing, or the values are not the expected list-of-strings shape — the
+    caller still surfaces the raw (scrubbed) excerpt in that case."""
+    try:
+        decoded = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    errors = decoded.get("errors")
+    if not isinstance(errors, dict):
+        return {}
+    parsed: dict[str, list[str]] = {}
+    for field, messages in errors.items():
+        if not isinstance(field, str):
+            continue
+        if isinstance(messages, list):
+            parsed[field] = [str(m) for m in messages]
+        else:
+            parsed[field] = [str(messages)]
+    return parsed
+
+
+def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
+    """Translate a non-2xx ``httpx.Response`` into the appropriate Kanban Tool
+    exception. Returns silently for 2xx so the caller can proceed to JSON
+    decoding. Splitting this out keeps ``request()`` focused on transport
+    concerns while error-shape policy lives in one place."""
+    status = response.status_code
+    if status < 400:
+        return
+    if status == 401:
+        raise KanbanToolPermissionError(
+            "Kanban Tool API rejected the request as unauthorized (401). "
+            "Check that the KANBANTOOL_API_TOKEN env var is set to a valid token."
+        )
+    if status == 403:
+        raise KanbanToolPermissionError(
+            "Kanban Tool API denied the request as forbidden (403). "
+            "The token does not have permission for this resource."
+        )
+    body_excerpt = _scrub_secrets(response.text)[:_BODY_EXCERPT_LIMIT]
+    if status == 422:
+        raise KanbanToolValidationError(
+            f"Kanban Tool API rejected {method} {path} as invalid (422).",
+            status_code=422,
+            body_excerpt=body_excerpt,
+            field_errors=_parse_field_errors(response.text),
+        )
+    raise KanbanToolHTTPError(
+        f"Kanban Tool API returned HTTP {status} for {method} {path}",
+        status_code=status,
+        body_excerpt=body_excerpt,
+    )
 
 
 class KanbanToolClient:
@@ -71,30 +130,13 @@ class KanbanToolClient:
                     f"Transport error contacting Kanban Tool API: {second_error}"
                 ) from second_error
 
-        status = response.status_code
-        if status == 401:
-            raise KanbanToolPermissionError(
-                "Kanban Tool API rejected the request as unauthorized (401). "
-                "Check that the KANBANTOOL_API_TOKEN env var is set to a valid token."
-            )
-        if status == 403:
-            raise KanbanToolPermissionError(
-                "Kanban Tool API denied the request as forbidden (403). "
-                "The token does not have permission for this resource."
-            )
-        if status >= 400:
-            body_excerpt = _scrub_secrets(response.text)[:_BODY_EXCERPT_LIMIT]
-            raise KanbanToolHTTPError(
-                f"Kanban Tool API returned HTTP {status} for {method} {normalized}",
-                status_code=status,
-                body_excerpt=body_excerpt,
-            )
+        _raise_for_status(response, method, normalized)
 
         try:
             return response.json()
         except json.JSONDecodeError:
             raise KanbanToolHTTPError(
                 f"Kanban Tool API returned non-JSON body for {method} {normalized}",
-                status_code=status,
+                status_code=response.status_code,
                 body_excerpt=_scrub_secrets(response.text)[:_BODY_EXCERPT_LIMIT],
             ) from None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from fastmcp import FastMCP
 
@@ -129,6 +130,60 @@ async def search_tasks(
     raw = data.get("tasks", []) if isinstance(data, dict) else []
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed search payload").
     return [Task.model_validate(t) for t in raw]
+
+
+@mcp.tool
+async def create_task(
+    name: str,
+    board_id: int,
+    description: str | None = None,
+    lane_id: int | None = None,
+    position: int | None = None,
+    assignees: list[int] | None = None,
+    due_date: str | None = None,
+    priority: int | str | None = None,
+    tags: str | None = None,
+) -> Task:
+    """Create a new task on a board.
+
+    ``name`` and ``board_id`` are required; everything else is optional and
+    omitted from the request when left unset (the API may treat an explicit
+    ``null`` as a clear, which is rarely what a caller wants on create).
+
+    ``lane_id`` is the column / workflow stage the card lands in — pass the
+    same id you'd see on a fetched ``Task.lane_id``. ``due_date`` is an ISO
+    8601 string forwarded verbatim. ``priority`` accepts either the string
+    enum or the raw integer some accounts use. ``tags`` is a comma-separated
+    string per the API's wire format.
+
+    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
+    on a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
+    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
+    """
+    payload: dict[str, Any] = {"name": name, "board_id": board_id}
+    if description is not None:
+        payload["description"] = description
+    if lane_id is not None:
+        # Caller-facing ``lane_id`` maps to the wire's ``workflow_stage_id``,
+        # mirroring the inbound alias on the ``Task`` model.
+        payload["workflow_stage_id"] = lane_id
+    if position is not None:
+        payload["position"] = position
+    if assignees is not None:
+        payload["assignees"] = assignees
+    if due_date is not None:
+        payload["due_date"] = due_date
+    if priority is not None:
+        payload["priority"] = priority
+    if tags is not None:
+        payload["tags"] = tags
+
+    # M3: confirm against a real account that POST /tasks.json expects the
+    # ``{"task": {...}}`` Rails-style envelope (vs. flat top-level fields).
+    body = {"task": payload}
+    data = await _get_client().request("POST", "tasks", json=body)
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
+    return Task.model_validate(data)
 
 
 def run() -> None:
