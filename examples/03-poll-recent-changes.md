@@ -46,12 +46,12 @@ than pretending push semantics exist. Two consequences worth internalising:
   {
     "id": 770211,
     "created_at": "2026-04-30T11:14:42Z",
-    "action": "task_moved",
-    "actor_id": 18,
-    "actor_name": "Priya N.",
-    "target_type": "Task",
-    "target_id": 50232,
-    "details": {"from_stage_id": 90002, "to_stage_id": 90003}
+    "what": "task_moved",
+    "user_id": 18,
+    "changed_object_type": "Task",
+    "changed_object_id": 50232,
+    "description": "Priya N. moved Refactor auth middleware from In Progress to Review.",
+    "data": {"from_stage_id": 90002, "to_stage_id": 90003, "user_initials": "PN"}
   }
 ]
 ```
@@ -69,12 +69,12 @@ than pretending push semantics exist. Two consequences worth internalising:
   {
     "id": 770212,
     "created_at": "2026-04-30T11:15:30Z",
-    "action": "comment_added",
-    "actor_id": 44,
-    "actor_name": "Tom R.",
-    "target_type": "Task",
-    "target_id": 50231,
-    "details": {"comment_id": 88110}
+    "what": "comment_added",
+    "user_id": 44,
+    "changed_object_type": "Task",
+    "changed_object_id": 50231,
+    "description": "Tom R. commented on Wire up Stripe webhook.",
+    "data": {"comment_id": 88110, "user_initials": "TR"}
   }
 ]
 ```

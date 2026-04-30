@@ -38,7 +38,7 @@ walks `list_boards` → `get_board` → `search_tasks` and summarises by column.
     {"id": 90004, "name": "Done",        "position": 4, "type": "done"}
   ],
   "swimlanes": [],
-  "custom_fields": []
+  "card_template": {"description": {"enabled": true, "position": 1}, "priority": {"enabled": true, "position": 2}}
 }
 ```
 
@@ -48,10 +48,10 @@ walks `list_boards` → `get_board` → `search_tasks` and summarises by column.
 
 ```json
 [
-  {"id": 50231, "name": "Wire up Stripe webhook",  "lane_id": 90002, "priority": "high",   "assignees": [12], "tags": "backend,billing"},
-  {"id": 50232, "name": "Refactor auth middleware","lane_id": 90002, "priority": "medium", "assignees": [12, 18]},
-  {"id": 50233, "name": "Onboarding tour copy",    "lane_id": 90003, "priority": "low",    "assignees": [44]},
-  {"id": 50234, "name": "Migrate Postgres to 16",  "lane_id": 90001, "priority": "high",   "assignees": []}
+  {"id": 50231, "name": "Wire up Stripe webhook",  "lane_id": 90002, "priority": "high",   "assigned_user_id": 12, "tags": "backend,billing"},
+  {"id": 50232, "name": "Refactor auth middleware","lane_id": 90002, "priority": "medium", "assigned_user_id": 18},
+  {"id": 50233, "name": "Onboarding tour copy",    "lane_id": 90003, "priority": "low",    "assigned_user_id": 44},
+  {"id": 50234, "name": "Migrate Postgres to 16",  "lane_id": 90001, "priority": "high",   "assigned_user_id": null}
 ]
 ```
 

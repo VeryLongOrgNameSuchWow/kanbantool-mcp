@@ -25,20 +25,20 @@ async def test_recent_changes_happy_path(_inject_client: KanbanToolClient) -> No
             {
                 "id": 1001,
                 "created_at": "2026-04-30T10:15:00Z",
-                "action": "task_created",
-                "actor_id": 7,
-                "actor_name": "Ada Lovelace",
-                "target_type": "Task",
-                "target_id": 555,
-                "details": {"title": "Write spec"},
+                "what": "created",
+                "user_id": 7,
+                "changed_object_type": "Task",
+                "changed_object_id": 555,
+                "description": "Ada Lovelace created Write spec",
+                "data": {"user_initials": "AL", "task_name": "Write spec"},
                 "extra_unknown_field": "ignored",
             },
             {
                 "id": 1000,
                 "created_at": "2026-04-30T09:00:00Z",
-                "action": "task_moved",
-                "target_type": "Task",
-                "target_id": 555,
+                "what": "moved",
+                "changed_object_type": "Task",
+                "changed_object_id": 555,
             },
         ]
     }
@@ -50,18 +50,18 @@ async def test_recent_changes_happy_path(_inject_client: KanbanToolClient) -> No
     newest, older = result
     assert newest.id == 1001
     assert newest.created_at == datetime(2026, 4, 30, 10, 15, 0, tzinfo=UTC)
-    assert newest.action == "task_created"
-    assert newest.actor_id == 7
-    assert newest.actor_name == "Ada Lovelace"
-    assert newest.target_type == "Task"
-    assert newest.target_id == 555
-    assert newest.details == {"title": "Write spec"}
+    assert newest.what == "created"
+    assert newest.user_id == 7
+    assert newest.changed_object_type == "Task"
+    assert newest.changed_object_id == 555
+    assert newest.description == "Ada Lovelace created Write spec"
+    assert newest.data == {"user_initials": "AL", "task_name": "Write spec"}
 
     assert older.id == 1000
-    assert older.action == "task_moved"
-    assert older.actor_id is None
-    assert older.actor_name is None
-    assert older.details is None
+    assert older.what == "moved"
+    assert older.user_id is None
+    assert older.description is None
+    assert older.data is None
 
 
 async def test_recent_changes_passes_since_as_query_param(

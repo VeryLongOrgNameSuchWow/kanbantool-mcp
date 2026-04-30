@@ -6,10 +6,9 @@ surface; the mapping is centralised here so the next maintainer doesn't have
 to grep for it:
 
 - ``Board.columns`` ↔ API ``workflow_stages``
-- ``Board.custom_fields`` ↔ API ``card_template``
 - ``Task.lane_id`` ↔ API ``workflow_stage_id``
-- ``Column.type_`` / ``CustomField.type_`` ↔ API ``type`` (avoids shadowing
-  the Python builtin internally; serialised back as ``type`` via alias).
+- ``Column.type_`` ↔ API ``type`` (avoids shadowing the Python builtin
+  internally; serialised back as ``type`` via alias).
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class Column(BaseModel):
@@ -30,6 +29,10 @@ class Column(BaseModel):
     position: int | None = None
     parent_id: int | None = None
     wip_limit: int | None = None
+    # Semantic role string from the API ("backlog_inventory", "in_progress",
+    # "completed", ...). The LLM uses this to distinguish columns by intent
+    # rather than by display name.
+    lane_type: str | None = None
     # ``type`` shadows a Python builtin internally; ``serialization_alias``
     # keeps the wire/MCP-schema name as ``type`` while the Python attribute
     # stays ``type_``.
@@ -46,21 +49,6 @@ class Swimlane(BaseModel):
     position: int | None = None
 
 
-class CustomField(BaseModel):
-    """A custom field definition from the board's card template."""
-
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, serialize_by_alias=True)
-
-    label: str | None = None
-    position: int | None = None
-    # Kanban Tool returns a bare string for simple fields and a structured
-    # list for select-style fields; accept either rather than dropping the
-    # field on a type mismatch.
-    options: list[str] | str | None = None
-    # See ``Column.type_`` for the alias rationale.
-    type_: str | None = Field(default=None, alias="type", serialization_alias="type")
-
-
 class Board(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
@@ -74,7 +62,16 @@ class Board(BaseModel):
     # Detail-only collections; absent from list_boards' compact payload, hence defaults.
     columns: list[Column] = Field(default_factory=list, alias="workflow_stages")
     swimlanes: list[Swimlane] = Field(default_factory=list)
-    custom_fields: list[CustomField] = Field(default_factory=list, alias="card_template")
+    # ``card_template`` is the API's per-board "which card fields are shown"
+    # config — a dict keyed by field name (``description``, ``priority``,
+    # ``custom_field_1``, ...) whose values describe each field's enabled
+    # state, position, and (for ``custom_field_*``) label/type/options.
+    # Exposed verbatim as a dict; a typed wrapper can come in v0.2.0 once
+    # we have a use case beyond "show the LLM the config".
+    card_template: dict[str, Any] | None = None
+    # v0.2.0: embedded ``tasks: list[Task]`` (live-API spike showed the API
+    # returns these on the detail endpoint — could remove a round-trip for
+    # many flows). Pending design call.
 
 
 class Task(BaseModel):
@@ -106,19 +103,45 @@ class Task(BaseModel):
     due_date: str | None = None
     start_date: str | None = None
     tags: str | None = None
-    # User ids only. The full Assignee submodel can land alongside a tool that
-    # actually needs it.
-    assignees: list[int] | None = None
-    is_archived: bool | None = None
-    is_blocked: bool | None = None
+    # The API surfaces a single user id, not a list. The richer Assignee
+    # submodel (and any multi-user collaborators) can land alongside a tool
+    # that actually needs it.
+    assigned_user_id: int | None = None
+    # Archival is timestamped on the wire; ``is_archived`` is a derived
+    # convenience exposed via a property below.
+    archived_at: str | None = None
+    # ``block_reason`` is the only block-related field the API actually
+    # returns — ``is_blocked`` is derived from "reason is set".
     block_reason: str | None = None
     subtasks_count: int | None = None
-    comment_count: int | None = None
+    comments_count: int | None = None
     # Flat seconds. The wrapped ``{ "total": ..., "by_user": ... }`` shape is a
     # separate concern — exposed via a dedicated time-tracker tool later.
-    time_tracker_total: int | None = None
+    timers_total: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    # v0.2.0: additive fields confirmed in the live-API spike — ``size_estimate``,
+    # ``card_color``, ``search_tags``, ``collaborators``, ``card_type_id``,
+    # ``custom_field_1..15``, ``recurring_schedule``, ``reminders_schedule``,
+    # ``linked_tasks``, ``task_dependencies``. Tracked under the High-Value
+    # tier of #38; the 15 numbered custom fields need a dict-shaped design call.
+
+    # ``@computed_field`` is required so pydantic v2 includes the derived
+    # boolean in ``model_dump()`` and ``model_json_schema()`` — a bare
+    # ``@property`` is invisible to the serialiser, which means FastMCP would
+    # never surface the flag to the LLM. The ``prop-decorator`` ignore quiets
+    # the pydantic v2 ``@computed_field`` + ``@property`` decorator-order quirk.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_archived(self) -> bool:
+        """True iff the task has an archival timestamp."""
+        return self.archived_at is not None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_blocked(self) -> bool:
+        """True iff the task has a non-empty block reason."""
+        return self.block_reason is not None
 
 
 class Comment(BaseModel):
@@ -156,17 +179,26 @@ class Subtask(BaseModel):
 class ChangelogEntry(BaseModel):
     """A single entry from a board's changelog feed.
 
-    Fields beyond ``id`` and ``created_at`` are optional — the API's exact
-    shape varies by event type, and we keep this model permissive so the
-    poller never blows up on an unfamiliar action."""
+    Field names mirror the API verbatim (no aliasing) — the wire keys are
+    already pleasant Python identifiers. Fields beyond ``id`` and
+    ``created_at`` are optional: the API's exact shape varies by event type,
+    and ``data`` is the catch-all for action-specific context (e.g. for
+    ``what="created"`` it carries ``user_initials``, ``task_name``,
+    ``workflow_stage_name``, ...)."""
 
     model_config = ConfigDict(extra="ignore")
 
     id: int
     created_at: datetime
-    action: str | None = None
-    actor_id: int | None = None
-    actor_name: str | None = None
-    target_type: str | None = None
-    target_id: int | None = None
-    details: dict[str, Any] | None = None
+    # Action verb (``"created"``, ``"updated"``, ``"moved"``, ...).
+    what: str | None = None
+    user_id: int | None = None
+    # Object the action targeted — ``"Task"``, ``"Board"``, etc.
+    changed_object_type: str | None = None
+    changed_object_id: int | None = None
+    # Pre-rendered human-readable summary. Useful for LLM consumers that just
+    # want a one-line "what happened" string without re-templating ``data``.
+    description: str | None = None
+    # Action-specific payload (e.g. ``user_initials``, ``task_name``,
+    # ``workflow_stage_name``). Shape varies by ``what``.
+    data: dict[str, Any] | None = None

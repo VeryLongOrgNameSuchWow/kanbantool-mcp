@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from kanbantool_mcp.client import KanbanToolClient
 from kanbantool_mcp.exceptions import KanbanToolHTTPError
-from kanbantool_mcp.models import Column, CustomField
+from kanbantool_mcp.models import Column
 from kanbantool_mcp.server import get_board
 
 from .conftest import BASE_URL
@@ -37,6 +37,7 @@ async def test_get_board_happy_path(_inject_client: KanbanToolClient) -> None:
                 "parent_id": None,
                 "wip_limit": None,
                 "type": "queue",
+                "lane_type": "backlog_inventory",
                 "extra_stage_field": "ignored",
             },
             {
@@ -45,25 +46,23 @@ async def test_get_board_happy_path(_inject_client: KanbanToolClient) -> None:
                 "position": 2,
                 "wip_limit": 5,
                 "type": "in-progress",
+                "lane_type": "in_progress",
             },
         ],
         "swimlanes": [
             {"id": 200, "name": "Default", "position": 1, "extra_lane_field": "ignored"},
             {"id": 201, "name": "Expedite", "position": 2},
         ],
-        "card_template": [
-            {
+        "card_template": {
+            "description": {"enabled": True, "position": 1},
+            "priority": {"enabled": True, "position": 2},
+            "custom_field_1": {
+                "enabled": True,
+                "position": 3,
                 "label": "Story Points",
                 "type": "number",
-                "position": 1,
-                "extra_field_meta": "ignored",
             },
-            {
-                "label": "Owner",
-                "type": "user",
-                "position": 2,
-            },
-        ],
+        },
     }
     with respx.mock(assert_all_called=True) as router:
         router.get(_board_url(42)).mock(return_value=httpx.Response(200, json=payload))
@@ -85,8 +84,10 @@ async def test_get_board_happy_path(_inject_client: KanbanToolClient) -> None:
     assert backlog.parent_id is None
     assert backlog.wip_limit is None
     assert backlog.type_ == "queue"
+    assert backlog.lane_type == "backlog_inventory"
     assert in_progress.wip_limit == 5
     assert in_progress.type_ == "in-progress"
+    assert in_progress.lane_type == "in_progress"
 
     assert len(board.swimlanes) == 2
     default_lane, expedite_lane = board.swimlanes
@@ -95,13 +96,12 @@ async def test_get_board_happy_path(_inject_client: KanbanToolClient) -> None:
     assert default_lane.position == 1
     assert expedite_lane.name == "Expedite"
 
-    assert len(board.custom_fields) == 2
-    story_points, owner = board.custom_fields
-    assert story_points.label == "Story Points"
-    assert story_points.type_ == "number"
-    assert story_points.position == 1
-    assert owner.label == "Owner"
-    assert owner.type_ == "user"
+    # ``card_template`` is exposed verbatim as a dict — the API's per-board
+    # config of which card fields are shown.
+    assert board.card_template is not None
+    assert board.card_template["description"] == {"enabled": True, "position": 1}
+    assert board.card_template["custom_field_1"]["label"] == "Story Points"
+    assert board.card_template["custom_field_1"]["type"] == "number"
 
 
 async def test_get_board_minimal_payload_defaults_collections(
@@ -117,7 +117,7 @@ async def test_get_board_minimal_payload_defaults_collections(
     assert board.name == "Tiny"
     assert board.columns == []
     assert board.swimlanes == []
-    assert board.custom_fields == []
+    assert board.card_template is None
 
 
 async def test_get_board_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
@@ -142,31 +142,6 @@ def test_column_serializes_type_alias_not_underscore() -> None:
     json_dumped = column.model_dump(mode="json")
     assert "type" in json_dumped
     assert "type_" not in json_dumped
-
-
-def test_custom_field_serializes_type_alias_not_underscore() -> None:
-    """A JSON dump of a CustomField uses key ``type``, not ``type_``."""
-    field = CustomField.model_validate(
-        {"label": "Owner", "type": "user", "position": 1},
-    )
-    dumped = field.model_dump()
-    assert "type" in dumped
-    assert "type_" not in dumped
-    assert dumped["type"] == "user"
-
-
-def test_custom_field_options_accepts_string() -> None:
-    """Bare-string ``options`` (simple fields) parses cleanly."""
-    field = CustomField.model_validate({"label": "Notes", "options": "single"})
-    assert field.options == "single"
-
-
-def test_custom_field_options_accepts_list() -> None:
-    """Structured list ``options`` (select-style fields) parses cleanly."""
-    field = CustomField.model_validate(
-        {"label": "Severity", "options": ["low", "medium", "high"]},
-    )
-    assert field.options == ["low", "medium", "high"]
 
 
 async def test_get_board_rejects_zero_board_id_before_http() -> None:
