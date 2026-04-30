@@ -25,8 +25,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/VeryLongNicknameSuchWow/kanbantool-mcp"
-Issues = "https://github.com/VeryLongNicknameSuchWow/kanbantool-mcp/issues"
+Homepage = "https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp"
+Issues = "https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues"
 
 [project.scripts]
 kanbantool-mcp = "kanbantool_mcp.__main__:main"
