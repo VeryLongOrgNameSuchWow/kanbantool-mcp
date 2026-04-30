@@ -147,3 +147,30 @@ async def test_404_with_empty_body(client: KanbanToolClient) -> None:
             await client.request("GET", "boards/999")
         assert exc_info.value.status_code == 404
         assert exc_info.value.body_excerpt == ""
+
+
+async def test_request_follows_302_redirect(client: KanbanToolClient) -> None:
+    # /users/current.json 302s to the resolved /users/{id}.json on real accounts.
+    # httpx must follow the redirect transparently and return the target's JSON.
+    target_url = f"{BASE_URL}users/42.json"
+    with respx.mock(assert_all_called=True) as router:
+        router.get(f"{BASE_URL}users/current.json").mock(
+            return_value=httpx.Response(302, headers={"Location": target_url})
+        )
+        router.get(target_url).mock(return_value=httpx.Response(200, json={"id": 42}))
+        result = await client.request("GET", "users/current")
+        assert result == {"id": 42}
+
+
+async def test_request_follows_relative_redirect(client: KanbanToolClient) -> None:
+    # The Kanban Tool API returns a path-only Location; httpx must resolve it
+    # against the base URL.
+    with respx.mock(assert_all_called=True) as router:
+        router.get(f"{BASE_URL}users/current.json").mock(
+            return_value=httpx.Response(302, headers={"Location": "/api/v3/users/42.json"})
+        )
+        router.get(f"{BASE_URL}users/42.json").mock(
+            return_value=httpx.Response(200, json={"id": 42})
+        )
+        result = await client.request("GET", "users/current")
+        assert result == {"id": 42}
