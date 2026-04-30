@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -110,9 +111,45 @@ async def test_update_task_unset_optionals_omitted_not_nulled(
         "due_date",
         "start_date",
         "tags",
+        "assigned_user_id",
         "assignees",
     ):
         assert absent_key not in inner
+
+
+async def test_update_task_assigned_user_id_serializes_directly(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """``assigned_user_id`` is the wire field name (not an alias) — a
+    single-field update must land as ``{"task": {"assigned_user_id": <int>}}``."""
+    response_payload = {
+        "id": TASK_ID,
+        "name": "x",
+        "board_id": 2,
+        "assigned_user_id": 11,
+    }
+    with respx.mock(assert_all_called=True) as router:
+        route = router.put(TASK_URL).mock(return_value=httpx.Response(200, json=response_payload))
+        task = await update_task(task_id=TASK_ID, assigned_user_id=11)
+
+    assert task.assigned_user_id == 11
+    inner = _request_body(route)["task"]
+    assert isinstance(inner, dict)
+    assert inner == {"assigned_user_id": 11}
+
+
+async def test_update_task_legacy_assignees_kwarg_rejected(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """The legacy ``assignees=[int]`` kwarg has been removed (the API silently
+    ignored it — see #62). Calling with it must raise ``TypeError`` before any
+    HTTP traffic."""
+    # Route through a kwargs dict typed as ``dict[str, Any]`` so the static
+    # type-checker doesn't flag the removed kwarg — we're deliberately
+    # exercising runtime rejection.
+    legacy_kwargs: dict[str, Any] = {"task_id": TASK_ID, "assignees": [11]}
+    with pytest.raises(TypeError):
+        await update_task(**legacy_kwargs)
 
 
 async def test_update_task_no_args_raises_value_error_without_http(
@@ -147,9 +184,11 @@ async def test_update_task_no_args_raises_value_error_without_http(
         "due_date",
         "start_date",
         "tags",
-        "assignees",
+        "assigned_user_id",
     ):
         assert expected in msg, f"update_task ValueError message missing '{expected}': {msg!r}"
+    # The legacy list-shaped key has been removed from this surface (#62).
+    assert "assignees" not in msg.replace("assigned_user_id", "")
     # The wire-only name must not surface to the LLM — they call ``lane_id``.
     assert "workflow_stage_id" not in msg
     # ``column_id`` belongs to ``move_task``'s surface only; it must not bleed

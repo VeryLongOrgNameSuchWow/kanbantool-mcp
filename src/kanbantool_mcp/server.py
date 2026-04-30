@@ -163,7 +163,7 @@ async def create_task(
     description: str | None = None,
     lane_id: int | None = None,
     position: int | None = None,
-    assignees: list[int] | None = None,
+    assigned_user_id: int | None = None,
     due_date: str | None = None,
     priority: int | str | None = None,
     tags: str | None = None,
@@ -171,6 +171,9 @@ async def create_task(
     """Create a new task on a board. Only ``name`` and ``board_id`` are required.
 
     ``lane_id`` is the target column (matches ``Task.lane_id`` on fetched tasks).
+    ``assigned_user_id`` sets the single assignee — Kanban Tool tasks have one
+    assignee, not a list. (The API silently ignores a legacy ``assignees: [int]``
+    payload on writes, so this kwarg is the wire field name directly.)
     ``priority`` accepts the string enum or the raw integer; ``tags`` is a
     comma-separated string; ``due_date`` is an ISO 8601 string forwarded as-is.
     Unset kwargs are omitted from the request, never sent as explicit null."""
@@ -183,8 +186,8 @@ async def create_task(
         payload["workflow_stage_id"] = lane_id
     if position is not None:
         payload["position"] = position
-    if assignees is not None:
-        payload["assignees"] = assignees
+    if assigned_user_id is not None:
+        payload["assigned_user_id"] = assigned_user_id
     if due_date is not None:
         payload["due_date"] = due_date
     if priority is not None:
@@ -280,14 +283,16 @@ async def update_task(
     due_date: str | None = None,
     start_date: str | None = None,
     tags: str | None = None,
-    assignees: list[int] | None = None,
+    assigned_user_id: int | None = None,
 ) -> Task:
     """Partially update a task's fields. Only the kwargs you pass are sent;
     ``None`` means *omit*, not *clear* (the API ignores nulls, doesn't wipe).
 
     Field set mirrors ``create_task``; same wire conventions for ``priority``,
-    ``tags``, and date fields. For column/lane/position changes prefer
-    ``move_task`` — it's the intent-revealing surface for that workflow.
+    ``tags``, and date fields. ``assigned_user_id`` sets the single assignee —
+    Kanban Tool tasks have one assignee, not a list. For column/lane/position
+    changes prefer ``move_task`` — it's the intent-revealing surface for that
+    workflow.
     Raises ``ValueError`` if every field is ``None`` (no-op guard)."""
     return await _patch_task(
         task_id,
@@ -303,7 +308,7 @@ async def update_task(
             "due_date": due_date,
             "start_date": start_date,
             "tags": tags,
-            "assignees": assignees,
+            "assigned_user_id": assigned_user_id,
         },
     )
 

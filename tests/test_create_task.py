@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import httpx
 import pytest
@@ -65,7 +66,7 @@ async def test_create_task_full_payload_renames_lane_id(_inject_client: KanbanTo
             description="Cut a release once CI is green.",
             lane_id=100,
             position=3,
-            assignees=[11, 22],
+            assigned_user_id=11,
             due_date="2026-05-15T00:00:00Z",
             priority="high",
             tags="release,urgent",
@@ -80,12 +81,15 @@ async def test_create_task_full_payload_renames_lane_id(_inject_client: KanbanTo
         "description": "Cut a release once CI is green.",
         "workflow_stage_id": 100,
         "position": 3,
-        "assignees": [11, 22],
+        "assigned_user_id": 11,
         "due_date": "2026-05-15T00:00:00Z",
         "priority": "high",
         "tags": "release,urgent",
     }
     assert "lane_id" not in inner
+    # The legacy list-shaped key must never reach the wire — the API silently
+    # ignores it (#62) and the LLM-facing kwarg has been removed.
+    assert "assignees" not in inner
 
     # Round-trip: the response is parsed back into a Task with the same alias.
     assert task.id == 4242
@@ -116,12 +120,43 @@ async def test_create_task_unset_optionals_omitted_not_nulled(
         "workflow_stage_id",
         "lane_id",
         "position",
+        "assigned_user_id",
         "assignees",
         "due_date",
         "priority",
         "tags",
     ):
         assert absent_key not in inner
+
+
+async def test_create_task_assigned_user_id_serializes_directly(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """``assigned_user_id`` is the wire field name (not an alias) — it must
+    land in the body as ``{"task": {"assigned_user_id": <int>, ...}}``."""
+    response_payload = {"id": 1, "name": "x", "board_id": 2, "assigned_user_id": 11}
+    with respx.mock(assert_all_called=True) as router:
+        route = router.post(TASKS_URL).mock(return_value=httpx.Response(201, json=response_payload))
+        task = await create_task(name="x", board_id=2, assigned_user_id=11)
+
+    assert task.assigned_user_id == 11
+    inner = _request_body(route)["task"]
+    assert isinstance(inner, dict)
+    assert inner == {"name": "x", "board_id": 2, "assigned_user_id": 11}
+
+
+async def test_create_task_legacy_assignees_kwarg_rejected(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """The legacy ``assignees=[int]`` kwarg has been removed (the API silently
+    ignored it — see #62). Calling with it must raise ``TypeError`` before any
+    HTTP traffic, so the LLM gets an immediate signal to migrate."""
+    # Route through a kwargs dict typed as ``dict[str, Any]`` so the static
+    # type-checker doesn't flag the removed kwarg — we're deliberately
+    # exercising runtime rejection.
+    legacy_kwargs: dict[str, Any] = {"name": "x", "board_id": 2, "assignees": [11]}
+    with pytest.raises(TypeError):
+        await create_task(**legacy_kwargs)
 
 
 async def test_create_task_422_field_errors_parsed(_inject_client: KanbanToolClient) -> None:
