@@ -8,7 +8,7 @@ from fastmcp import FastMCP
 
 from .client import KanbanToolClient
 from .config import Config
-from .models import Board, ChangelogEntry
+from .models import Board, ChangelogEntry, Task
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
@@ -45,6 +45,19 @@ async def get_board(board_id: int) -> Board:
     data = await _get_client().request("GET", f"boards/{board_id}")
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed board payload").
     return Board.model_validate(data)
+
+
+@mcp.tool
+async def get_task(task_id: int) -> Task:
+    """Fetch a task by id.
+
+    Surfaces the task's headline metadata along with subtask count, comment
+    count, and total tracked time. Use the dedicated subtask/comment/time
+    tools to drill into the nested collections.
+    """
+    data = await _get_client().request("GET", f"tasks/{task_id}")
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
+    return Task.model_validate(data)
 
 
 @mcp.tool
