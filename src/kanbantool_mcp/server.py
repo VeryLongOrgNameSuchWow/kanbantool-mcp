@@ -9,7 +9,7 @@ from fastmcp import FastMCP
 
 from .client import KanbanToolClient
 from .config import Config
-from .models import Board, ChangelogEntry, Task
+from .models import Board, ChangelogEntry, Comment, Task
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
@@ -387,6 +387,23 @@ async def archive_task(task_id: int) -> Task:
     data = await _get_client().request("PATCH", f"tasks/{task_id}", json=body)
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
     return Task.model_validate(data)
+
+
+@mcp.tool
+async def add_comment(task_id: int, text: str) -> Comment:
+    """Add a comment to a task.
+
+    Posts ``text`` as a new comment on the task identified by ``task_id`` and
+    returns the created ``Comment`` (id, text, author, timestamps).
+
+    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
+    on a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
+    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
+    """
+    body = {"comment": {"text": text}}
+    data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed comment payload").
+    return Comment.model_validate(data)
 
 
 def run() -> None:
