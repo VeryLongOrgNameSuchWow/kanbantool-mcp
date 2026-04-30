@@ -14,3 +14,18 @@ uv.lock
 .vscode/
 .idea/
 .DS_Store
+
+# secrets
+# Defense-in-depth: never commit credentials. Project rule is to keep
+# secrets out of the tree entirely; these patterns just stop the obvious
+# mistakes (stray .env, copied SSH key, exported credentials.json, ...).
+.env
+.env.*
+*.pem
+*.key
+id_rsa
+id_ed25519
+id_ecdsa
+*.kdbx
+credentials.json
+secrets.json
