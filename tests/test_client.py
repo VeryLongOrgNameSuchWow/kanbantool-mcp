@@ -125,3 +125,34 @@ async def test_json_suffix_not_double_appended(client: KanbanToolClient) -> None
 def test_config_repr_does_not_leak_token() -> None:
     cfg = Config.from_env()
     assert "test-token" not in repr(cfg)
+
+
+async def test_non_json_2xx_raises_http_error(client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.get(f"{BASE_URL}users/current.json").mock(
+            return_value=httpx.Response(200, text="<html>oops</html>")
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await client.request("GET", "users/current")
+        assert exc_info.value.status_code == 200
+        assert "<html>" in exc_info.value.body_excerpt
+
+
+async def test_500_body_scrubs_bearer_token(client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.get(f"{BASE_URL}boards/1.json").mock(
+            return_value=httpx.Response(500, text="Authorization: Bearer leaked-token-secret-xyz")
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await client.request("GET", "boards/1")
+        assert "leaked-token-secret-xyz" not in exc_info.value.body_excerpt
+        assert "Bearer ***" in exc_info.value.body_excerpt
+
+
+async def test_404_with_empty_body(client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.get(f"{BASE_URL}boards/999.json").mock(return_value=httpx.Response(404, text=""))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await client.request("GET", "boards/999")
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.body_excerpt == ""
