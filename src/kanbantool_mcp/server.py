@@ -186,5 +186,109 @@ async def create_task(
     return Task.model_validate(data)
 
 
+async def _patch_task(task_id: int, fields: dict[str, Any]) -> Task:
+    """PUT a partial-update body to ``/tasks/{task_id}.json``.
+
+    Shared between ``update_task`` (#9) and ``move_task`` (#10) — the two tools
+    differ only in *which* fields they expose to the LLM, not in how the wire
+    request is shaped. Centralizing the envelope/rename/empty-check logic here
+    keeps both tools' bodies focused on input validation and docstrings.
+
+    Behavior:
+
+    - Drops keys whose value is ``None`` (treat ``None`` as "omit", not
+      "clear" — Kanban Tool's PUT is Rails strong-params and ignores nulls
+      rather than clearing the column).
+    - Renames the caller-facing ``lane_id`` key to the wire's
+      ``workflow_stage_id``, mirroring the inbound alias on the ``Task`` model
+      and the outbound rename in ``create_task``.
+    - Wraps the cleaned dict in the ``{"task": {...}}`` Rails envelope.
+    - Raises ``ValueError`` if no fields remain after cleaning — issuing a
+      ``PUT`` with an empty body would round-trip the task unchanged and
+      consume a quota slot for nothing, so we reject it client-side.
+
+    Returns the updated ``Task`` parsed from the response body.
+    """
+    cleaned: dict[str, Any] = {}
+    for key, value in fields.items():
+        if value is None:
+            continue
+        wire_key = "workflow_stage_id" if key == "lane_id" else key
+        cleaned[wire_key] = value
+
+    if not cleaned:
+        raise ValueError(
+            "No fields to update: pass at least one of name, description, "
+            "board_id, lane_id, swimlane_id, position, priority, color, "
+            "due_date, start_date, tags, assignees."
+        )
+
+    body = {"task": cleaned}
+    data = await _get_client().request("PUT", f"tasks/{task_id}", json=body)
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
+    return Task.model_validate(data)
+
+
+@mcp.tool
+async def update_task(
+    task_id: int,
+    name: str | None = None,
+    description: str | None = None,
+    board_id: int | None = None,
+    lane_id: int | None = None,
+    swimlane_id: int | None = None,
+    position: int | None = None,
+    priority: int | str | None = None,
+    color: str | None = None,
+    due_date: str | None = None,
+    start_date: str | None = None,
+    tags: str | None = None,
+    assignees: list[int] | None = None,
+) -> Task:
+    """Update an existing task's fields. Partial — only the kwargs the caller
+    passes are sent; everything else is left untouched.
+
+    Field set mirrors ``create_task``. ``lane_id`` is the column / workflow
+    stage id; on the wire it maps to ``workflow_stage_id`` (matching the
+    inbound alias on ``Task``). ``priority`` accepts either the string enum or
+    the raw integer some accounts use. ``tags`` is a comma-separated string
+    per the API's wire format. Date fields are ISO 8601 strings forwarded
+    verbatim.
+
+    ``None`` means *omit*, not *clear*. Kanban Tool's PUT is Rails-style
+    strong params and ignores ``null`` rather than wiping a field, so this
+    tool deliberately drops unset kwargs from the body. A future PR can add
+    an explicit ``clear_fields`` mechanism if/when callers actually need to
+    null fields out.
+
+    For moving a card between columns or swimlanes, prefer ``move_task`` —
+    it's the dedicated, intent-revealing surface for that workflow even
+    though the wire call overlaps.
+
+    Raises ``ValueError`` if no updatable field is provided (so the LLM gets
+    an actionable error instead of a no-op round trip). Raises
+    ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``) on
+    a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
+    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
+    """
+    return await _patch_task(
+        task_id,
+        {
+            "name": name,
+            "description": description,
+            "board_id": board_id,
+            "lane_id": lane_id,
+            "swimlane_id": swimlane_id,
+            "position": position,
+            "priority": priority,
+            "color": color,
+            "due_date": due_date,
+            "start_date": start_date,
+            "tags": tags,
+            "assignees": assignees,
+        },
+    )
+
+
 def run() -> None:
     mcp.run()
