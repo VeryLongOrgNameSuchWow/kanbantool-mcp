@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastmcp import FastMCP
 
 from .client import KanbanToolClient
 from .config import Config
-from .models import Board, Task
+from .models import Board, ChangelogEntry, Task
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
@@ -56,6 +58,22 @@ async def get_task(task_id: int) -> Task:
     data = await _get_client().request("GET", f"tasks/{task_id}")
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
     return Task.model_validate(data)
+
+
+@mcp.tool
+async def recent_changes(board_id: int, since: datetime | None = None) -> list[ChangelogEntry]:
+    """Fetch the changelog feed for a board — the change-tracking primitive
+    that stands in for webhooks (Kanban Tool ships none).
+
+    Poll sparingly — typical cadence 30-120s, not per-keystroke. Always pass
+    ``since`` (timestamp of the last entry seen) on subsequent calls; omitting
+    it returns the full history, which can be very large. Returns entries
+    newest-first per the API."""
+    params = {"since": since.isoformat()} if since is not None else None
+    data = await _get_client().request("GET", f"boards/{board_id}/changelog", params=params)
+    raw = data.get("changelog", []) if isinstance(data, dict) else []
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed changelog payload").
+    return [ChangelogEntry.model_validate(entry) for entry in raw]
 
 
 def run() -> None:
