@@ -129,10 +129,32 @@ async def test_update_task_no_args_raises_value_error_without_http(
     with pytest.raises(ValueError) as exc_info:
         await update_task(task_id=TASK_ID)
 
-    # Message should name some of the available fields so the LLM can self-correct.
+    # Message should name *every* available field so the LLM can self-correct.
+    # The list is built dynamically from the helper's ``fields`` dict; pinning
+    # all 12 names here catches a regression where a future caller (e.g.
+    # ``move_task``) accidentally widens this message back to a hardcoded
+    # superset of its own surface.
     msg = str(exc_info.value)
-    assert "name" in msg
-    assert "lane_id" in msg
+    for expected in (
+        "name",
+        "description",
+        "board_id",
+        "lane_id",
+        "swimlane_id",
+        "position",
+        "priority",
+        "color",
+        "due_date",
+        "start_date",
+        "tags",
+        "assignees",
+    ):
+        assert expected in msg, f"update_task ValueError message missing '{expected}': {msg!r}"
+    # The wire-only name must not surface to the LLM — they call ``lane_id``.
+    assert "workflow_stage_id" not in msg
+    # ``column_id`` belongs to ``move_task``'s surface only; it must not bleed
+    # into this message.
+    assert "column_id" not in msg
     sentinel.assert_not_awaited()
 
 
