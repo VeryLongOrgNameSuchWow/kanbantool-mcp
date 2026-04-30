@@ -59,4 +59,8 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Live integration tests hit a real Kanban Tool account — exclude from the
+# default run so ``uv run pytest`` stays offline. The ``Live Integration``
+# workflow opts in via ``pytest tests/integration/``.
+addopts = "--ignore=tests/integration"
 asyncio_mode = "auto"
