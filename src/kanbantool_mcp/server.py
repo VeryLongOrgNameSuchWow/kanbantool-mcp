@@ -21,6 +21,12 @@ _PAYLOAD_EXCERPT_LIMIT = 200
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
+# Every tool below raises typed ``KanbanToolError`` subclasses on failure —
+# ``KanbanToolPermissionError`` (401/403), ``KanbanToolValidationError`` (422
+# with parsed ``field_errors``), or ``KanbanToolHTTPError`` (other 4xx/5xx).
+# Docstrings call these out only where the failure mode meaningfully shapes
+# tool selection or argument choice; see ``exceptions.py`` for the full ladder.
+
 # Module-level singleton. The stdio MCP runs in a single asyncio loop on a
 # single thread, so no lock is needed around lazy init.
 _client: KanbanToolClient | None = None
@@ -35,13 +41,14 @@ def _get_client() -> KanbanToolClient:
 
 @mcp.tool
 def ping() -> str:
-    """Return ``pong``. Useful as a smoke test for the MCP transport."""
+    """Smoke-test the MCP transport. Returns the literal string ``pong``."""
     return "pong"
 
 
 @mcp.tool
 async def list_boards() -> list[Board]:
-    """List boards visible to the authenticated user."""
+    """List boards visible to the authenticated user. Use this to discover
+    ``board_id`` values for the other tools."""
     data = await _get_client().request("GET", "users/current")
     raw = data.get("boards", []) if isinstance(data, dict) else []
     try:
@@ -62,7 +69,10 @@ async def list_boards() -> list[Board]:
 @mcp.tool
 @validate_call
 async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
-    """Fetch a board with its columns, swimlanes, and custom-field definitions."""
+    """Fetch one board with its columns, swimlanes, and custom-field definitions.
+
+    Use this when you need column/lane ids for ``move_task`` or ``create_task``.
+    Raises ``KanbanToolHTTPError(404)`` if the board id is unknown or hidden."""
     # ``validate_call`` enforces ``ge=1`` on direct callers (and tests) so a
     # bogus 0/-N never reaches the API as a confusing 404. FastMCP also
     # validates this from the wire side via the JSON schema.
@@ -73,12 +83,10 @@ async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
 
 @mcp.tool
 async def get_task(task_id: int) -> Task:
-    """Fetch a task by id.
+    """Fetch one task by id. Returns a Task with subtask/comment counts and total tracked time.
 
-    Surfaces the task's headline metadata along with subtask count, comment
-    count, and total tracked time. Use the dedicated subtask/comment/time
-    tools to drill into the nested collections.
-    """
+    Use ``list_subtasks`` to drill into nested collections.
+    Raises ``KanbanToolHTTPError(404)`` if the task is unknown or inaccessible."""
     data = await _get_client().request("GET", f"tasks/{task_id}")
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
     return Task.model_validate(data)
@@ -86,13 +94,11 @@ async def get_task(task_id: int) -> Task:
 
 @mcp.tool
 async def recent_changes(board_id: int, since: datetime | None = None) -> list[ChangelogEntry]:
-    """Fetch the changelog feed for a board — the change-tracking primitive
-    that stands in for webhooks (Kanban Tool ships none).
+    """Fetch a board's changelog (Kanban Tool has no webhooks; poll this instead).
 
-    Poll sparingly — typical cadence 30-120s, not per-keystroke. Always pass
-    ``since`` (timestamp of the last entry seen) on subsequent calls; omitting
-    it returns the full history, which can be very large. Returns entries
-    newest-first per the API."""
+    Always pass ``since`` (timestamp of the last entry seen) on follow-up calls —
+    omitting it returns the full history. Entries come newest-first.
+    Poll sparingly: 30-120s cadence, not per-keystroke."""
     params = {"since": since.isoformat()} if since is not None else None
     data = await _get_client().request("GET", f"boards/{board_id}/changelog", params=params)
     raw = data.get("changelog", []) if isinstance(data, dict) else []
@@ -116,29 +122,24 @@ async def search_tasks(
 ) -> list[Task]:
     """Search tasks across boards using Kanban Tool's query DSL.
 
-    ``query`` is forwarded to the API verbatim — do not URL-encode it,
-    do not wrap the whole expression in quotes, and do not reconstruct it
-    from individual operator keyword arguments. Quote a single value only
-    when it contains spaces (e.g. ``name:"ship the thing"``).
+    ``query`` is forwarded verbatim — do not URL-encode, do not wrap the whole
+    expression in quotes. Quote individual values only when they contain spaces
+    (e.g. ``name:"ship the thing"``). Terms combine with spaces and are AND-ed.
 
-    Supported operators (combine with spaces; terms are AND-ed together):
+    Supported operators:
 
     - ``@username``           — assignee, e.g. ``@alice``
-    - ``name:<text>``         — title contains, e.g. ``name:"deploy script"``
-    - ``priority:<level>``    — priority level, e.g. ``priority:high``
-    - ``tags:<tag>``          — tag match, e.g. ``tags:bug``
-    - ``due_date=<iso-date>`` — due-date equality, e.g. ``due_date=2026-05-01``
-    - ``subtasks_count<N>``   — also ``>``, ``=``; e.g. ``subtasks_count>0``
-    - ``archived:<bool>``     — include archived, e.g. ``archived:true``
+    - ``name:<text>``         — title contains
+    - ``priority:<level>``    — e.g. ``priority:high``
+    - ``tags:<tag>``          — tag match
+    - ``due_date=<iso-date>`` — e.g. ``due_date=2026-05-01``
+    - ``subtasks_count<N>``   — also ``>``, ``=``
+    - ``archived:<bool>``     — include archived
 
-    If the user asks for something the operators above don't cover (full-text
-    search of comments, fuzzy matching, etc.), say so plainly rather than
-    inventing syntax — the API will silently return zero results for unknown
-    operators.
-
-    ``board_id`` scopes the search to a single board when provided; omit it
-    to search every board the token can see. ``limit`` is clamped to
-    ``50`` server-side here; use ``page`` (1-indexed) to walk further results.
+    Unknown operators silently return zero results, so don't invent syntax for
+    things the DSL doesn't cover (comment full-text, fuzzy match) — say so
+    instead. ``board_id`` scopes to one board (omit to search all visible).
+    ``limit`` is clamped to 50; paginate further with ``page`` (1-indexed).
     """
     capped_limit = min(limit, _SEARCH_TASKS_MAX_LIMIT)
     params: dict[str, str | int] = {
@@ -167,22 +168,12 @@ async def create_task(
     priority: int | str | None = None,
     tags: str | None = None,
 ) -> Task:
-    """Create a new task on a board.
+    """Create a new task on a board. Only ``name`` and ``board_id`` are required.
 
-    ``name`` and ``board_id`` are required; everything else is optional and
-    omitted from the request when left unset (the API may treat an explicit
-    ``null`` as a clear, which is rarely what a caller wants on create).
-
-    ``lane_id`` is the column / workflow stage the card lands in — pass the
-    same id you'd see on a fetched ``Task.lane_id``. ``due_date`` is an ISO
-    8601 string forwarded verbatim. ``priority`` accepts either the string
-    enum or the raw integer some accounts use. ``tags`` is a comma-separated
-    string per the API's wire format.
-
-    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
-    on a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
-    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
-    """
+    ``lane_id`` is the target column (matches ``Task.lane_id`` on fetched tasks).
+    ``priority`` accepts the string enum or the raw integer; ``tags`` is a
+    comma-separated string; ``due_date`` is an ISO 8601 string forwarded as-is.
+    Unset kwargs are omitted from the request, never sent as explicit null."""
     payload: dict[str, Any] = {"name": name, "board_id": board_id}
     if description is not None:
         payload["description"] = description
@@ -291,32 +282,13 @@ async def update_task(
     tags: str | None = None,
     assignees: list[int] | None = None,
 ) -> Task:
-    """Update an existing task's fields. Partial — only the kwargs the caller
-    passes are sent; everything else is left untouched.
+    """Partially update a task's fields. Only the kwargs you pass are sent;
+    ``None`` means *omit*, not *clear* (the API ignores nulls, doesn't wipe).
 
-    Field set mirrors ``create_task``. ``lane_id`` is the column / workflow
-    stage id; on the wire it maps to ``workflow_stage_id`` (matching the
-    inbound alias on ``Task``). ``priority`` accepts either the string enum or
-    the raw integer some accounts use. ``tags`` is a comma-separated string
-    per the API's wire format. Date fields are ISO 8601 strings forwarded
-    verbatim.
-
-    ``None`` means *omit*, not *clear*. Kanban Tool's PUT is Rails-style
-    strong params and ignores ``null`` rather than wiping a field, so this
-    tool deliberately drops unset kwargs from the body. A future PR can add
-    an explicit ``clear_fields`` mechanism if/when callers actually need to
-    null fields out.
-
-    For moving a card between columns or swimlanes, prefer ``move_task`` —
-    it's the dedicated, intent-revealing surface for that workflow even
-    though the wire call overlaps.
-
-    Raises ``ValueError`` if no updatable field is provided (so the LLM gets
-    an actionable error instead of a no-op round trip). Raises
-    ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``) on
-    a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
-    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
-    """
+    Field set mirrors ``create_task``; same wire conventions for ``priority``,
+    ``tags``, and date fields. For column/lane/position changes prefer
+    ``move_task`` — it's the intent-revealing surface for that workflow.
+    Raises ``ValueError`` if every field is ``None`` (no-op guard)."""
     return await _patch_task(
         task_id,
         {
@@ -345,26 +317,10 @@ async def move_task(
 ) -> Task:
     """Move a task between columns, swimlanes, or positions on its board.
 
-    At least one of ``column_id`` / ``swimlane_id`` / ``position`` must be
-    provided; calling with all three unset raises ``ValueError`` before any
-    HTTP is issued.
-
-    There is no dedicated ``/move`` endpoint in Kanban Tool API v3 — column
-    and lane transitions are expressed as a partial update on the task. This
-    tool exists as a separate, intent-revealing surface so the LLM picks the
-    right tool for "move this card", and the implementation rides on the
-    same patch helper as ``update_task``.
-
-    ``column_id`` is the caller-facing alias for the wire's
-    ``workflow_stage_id`` (mirroring how ``lane_id`` is exposed elsewhere) —
-    pass the same id you'd see on a fetched ``Task.lane_id``.
-
-    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
-    on a 422 with parsed ``field_errors`` — the typical case is a column id
-    that doesn't belong to this task's board, surfaced via the existing error
-    pipeline. Raises ``KanbanToolHTTPError`` on other 4xx/5xx;
-    ``KanbanToolPermissionError`` on 401/403.
-    """
+    At least one of ``column_id`` / ``swimlane_id`` / ``position`` must be set,
+    otherwise raises ``ValueError`` before issuing HTTP. ``column_id`` matches
+    the ``Task.lane_id`` on fetched tasks. Passing a column id from a different
+    board raises ``KanbanToolValidationError`` with parsed ``field_errors``."""
     return await _patch_task(
         task_id,
         {
@@ -378,30 +334,12 @@ async def move_task(
 
 @mcp.tool
 async def archive_task(task_id: int) -> Task:
-    """Archive a task.
+    """Archive a task. Returns the updated ``Task`` (caller can confirm
+    ``is_archived=True``).
 
-    Archiving on Kanban Tool v3 is a sentinel-action call rather than a
-    field update: ``PATCH /tasks/{id}.json`` with the flat top-level body
-    ``{"_action": "archive"}``. It does NOT go through the standard
-    ``{"task": {...}}`` partial-update envelope, so this tool intentionally
-    bypasses ``_patch_task`` and shapes the request itself. The same
-    endpoint serves the symmetric ``unarchive``/``delete``/``undelete``
-    actions (not currently exposed as tools).
-
-    Idempotent by design: re-archiving an already-archived task issues
-    the same PATCH and returns the task in its archived state. The wire
-    is assumed to respond 200 with the archived ``Task`` regardless of
-    prior state — verify M3: confirm against a real account that
-    re-archiving returns 200 (not 4xx). If it does 4xx, add a status-only
-    fallback (e.g. 409/422 → ``GET /tasks/{id}.json``) — never branch on
-    response body wording, which is locale- and version-fragile.
-
-    Returns the archived ``Task`` so the caller can confirm
-    ``is_archived=True``.
-
-    Raises ``KanbanToolHTTPError`` on 4xx/5xx (including a 404 if the task
-    id is unknown), and ``KanbanToolPermissionError`` on 401/403.
-    """
+    Idempotent: re-archiving an already-archived task succeeds. There is no
+    ``unarchive_task`` yet — archiving is currently one-way from this surface.
+    Raises ``KanbanToolHTTPError(404)`` if the task id is unknown."""
     # Sentinel-action family on PATCH /tasks/{id}.json: "archive",
     # "unarchive", "delete", "undelete". If we ever add unarchive_task /
     # delete_task / restore_task, copy this 2-line shape — don't generalize
@@ -414,15 +352,9 @@ async def archive_task(task_id: int) -> Task:
 
 @mcp.tool
 async def add_comment(task_id: int, text: str) -> Comment:
-    """Add a comment to a task.
-
-    Posts ``text`` as a new comment on the task identified by ``task_id`` and
-    returns the created ``Comment`` (id, text, author, timestamps).
-
-    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
-    on a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
-    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
-    """
+    """Post a comment on a task. Returns the created ``Comment`` with id,
+    text, author, and timestamps. Empty ``text`` typically raises
+    ``KanbanToolValidationError`` from the API."""
     body = {"comment": {"text": text}}
     data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed comment payload").
@@ -431,12 +363,10 @@ async def add_comment(task_id: int, text: str) -> Comment:
 
 @mcp.tool
 async def list_subtasks(task_id: int) -> list[Subtask]:
-    """List subtasks attached to a task.
+    """List subtasks on a task — id, name, completion state, position.
 
-    Returns each subtask's id, name, completion state, and position. Returns
-    an empty list if the task has no subtasks (or if the API returns a body
-    without a ``subtasks`` key — defensive parse mirroring ``list_boards``).
-    """
+    Returns an empty list when the task has none. Use ``get_task`` first if
+    you only need the subtask count rather than the full list."""
     data = await _get_client().request("GET", f"tasks/{task_id}/subtasks")
     raw = data.get("subtasks", []) if isinstance(data, dict) else []
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtasks payload").
@@ -445,16 +375,10 @@ async def list_subtasks(task_id: int) -> list[Subtask]:
 
 @mcp.tool
 async def add_subtask(task_id: int, title: str) -> Subtask:
-    """Add a subtask to a task.
+    """Add a subtask to a task. Returns the created ``Subtask``.
 
-    ``title`` is the human-readable label for the subtask; it maps to the
-    API's ``name`` field on the wire. The kwarg is exposed as ``title`` to
-    keep the LLM-facing surface consistent regardless of upstream naming.
-
-    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
-    on a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
-    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
-    """
+    ``title`` is the human-readable label. Empty ``title`` typically raises
+    ``KanbanToolValidationError`` from the API."""
     body = {"subtask": {"name": title}}
     data = await _get_client().request("POST", f"tasks/{task_id}/subtasks", json=body)
     # Trusting the bare-object response shape (mirrors get_task on main); no
