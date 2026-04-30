@@ -1,4 +1,16 @@
-"""Pydantic models for Kanban Tool resources. Expanded in M1/M2."""
+"""Pydantic models for Kanban Tool resources. Expanded in M1/M2.
+
+Abstraction layer — internal name vs. wire name. The Kanban Tool API exposes
+several fields under names we deliberately rename for ergonomics on the MCP
+surface; the mapping is centralised here so the next maintainer doesn't have
+to grep for it:
+
+- ``Board.columns`` ↔ API ``workflow_stages``
+- ``Board.custom_fields`` ↔ API ``card_template``
+- ``Task.lane_id`` ↔ API ``workflow_stage_id``
+- ``Column.type_`` / ``CustomField.type_`` ↔ API ``type`` (avoids shadowing
+  the Python builtin internally; serialised back as ``type`` via alias).
+"""
 
 from __future__ import annotations
 
@@ -11,15 +23,17 @@ from pydantic import BaseModel, ConfigDict, Field
 class Column(BaseModel):
     """A workflow stage on a board (the API calls these ``workflow_stages``)."""
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, serialize_by_alias=True)
 
     id: int
     name: str
     position: int | None = None
     parent_id: int | None = None
     wip_limit: int | None = None
-    # ``type`` shadows a Python builtin; accept the raw API key via alias.
-    type_: str | None = Field(default=None, alias="type")
+    # ``type`` shadows a Python builtin internally; ``serialization_alias``
+    # keeps the wire/MCP-schema name as ``type`` while the Python attribute
+    # stays ``type_``.
+    type_: str | None = Field(default=None, alias="type", serialization_alias="type")
 
 
 class Swimlane(BaseModel):
@@ -35,13 +49,16 @@ class Swimlane(BaseModel):
 class CustomField(BaseModel):
     """A custom field definition from the board's card template."""
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, serialize_by_alias=True)
 
     label: str | None = None
     position: int | None = None
-    options: str | None = None
-    # ``type`` shadows a Python builtin; accept the raw API key via alias.
-    type_: str | None = Field(default=None, alias="type")
+    # Kanban Tool returns a bare string for simple fields and a structured
+    # list for select-style fields; accept either rather than dropping the
+    # field on a type mismatch.
+    options: list[str] | str | None = None
+    # See ``Column.type_`` for the alias rationale.
+    type_: str | None = Field(default=None, alias="type", serialization_alias="type")
 
 
 class Board(BaseModel):

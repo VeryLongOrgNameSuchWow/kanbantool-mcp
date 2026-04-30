@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
-from pydantic import ValidationError
+from pydantic import Field, ValidationError, validate_call
 
 from .client import KanbanToolClient
 from .config import Config
@@ -60,8 +60,12 @@ async def list_boards() -> list[Board]:
 
 
 @mcp.tool
-async def get_board(board_id: int) -> Board:
+@validate_call
+async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
     """Fetch a board with its columns, swimlanes, and custom-field definitions."""
+    # ``validate_call`` enforces ``ge=1`` on direct callers (and tests) so a
+    # bogus 0/-N never reaches the API as a confusing 404. FastMCP also
+    # validates this from the wire side via the JSON schema.
     data = await _get_client().request("GET", f"boards/{board_id}")
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed board payload").
     return Board.model_validate(data)
