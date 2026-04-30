@@ -10,7 +10,6 @@ build/
 .tox/
 .venv/
 venv/
-uv.lock
 .vscode/
 .idea/
 .DS_Store
