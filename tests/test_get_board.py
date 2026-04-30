@@ -5,9 +5,11 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
+from pydantic import ValidationError
 
 from kanbantool_mcp.client import KanbanToolClient
 from kanbantool_mcp.exceptions import KanbanToolHTTPError
+from kanbantool_mcp.models import Column, CustomField
 from kanbantool_mcp.server import get_board
 
 from .conftest import BASE_URL
@@ -125,3 +127,62 @@ async def test_get_board_404_raises_http_error(_inject_client: KanbanToolClient)
             await get_board(999)
         assert exc_info.value.status_code == 404
         assert "not found" in exc_info.value.body_excerpt
+
+
+def test_column_serializes_type_alias_not_underscore() -> None:
+    """A JSON dump of a Column uses key ``type``, not ``type_``."""
+    column = Column.model_validate(
+        {"id": 1, "name": "Backlog", "type": "queue"},
+    )
+    dumped = column.model_dump()
+    assert "type" in dumped
+    assert "type_" not in dumped
+    assert dumped["type"] == "queue"
+    # JSON-mode dump must agree (this is what FastMCP renders to the client).
+    json_dumped = column.model_dump(mode="json")
+    assert "type" in json_dumped
+    assert "type_" not in json_dumped
+
+
+def test_custom_field_serializes_type_alias_not_underscore() -> None:
+    """A JSON dump of a CustomField uses key ``type``, not ``type_``."""
+    field = CustomField.model_validate(
+        {"label": "Owner", "type": "user", "position": 1},
+    )
+    dumped = field.model_dump()
+    assert "type" in dumped
+    assert "type_" not in dumped
+    assert dumped["type"] == "user"
+
+
+def test_custom_field_options_accepts_string() -> None:
+    """Bare-string ``options`` (simple fields) parses cleanly."""
+    field = CustomField.model_validate({"label": "Notes", "options": "single"})
+    assert field.options == "single"
+
+
+def test_custom_field_options_accepts_list() -> None:
+    """Structured list ``options`` (select-style fields) parses cleanly."""
+    field = CustomField.model_validate(
+        {"label": "Severity", "options": ["low", "medium", "high"]},
+    )
+    assert field.options == ["low", "medium", "high"]
+
+
+async def test_get_board_rejects_zero_board_id_before_http() -> None:
+    """``board_id=0`` raises a pydantic ValidationError before any HTTP call."""
+    with respx.mock(assert_all_called=False) as router:
+        # Register a route that would explode the test if it were ever hit.
+        route = router.get(_board_url(0)).mock(return_value=httpx.Response(200, json={}))
+        with pytest.raises(ValidationError):
+            await get_board(0)
+        assert not route.called
+
+
+async def test_get_board_rejects_negative_board_id_before_http() -> None:
+    """Negative ``board_id`` is also rejected before any HTTP call."""
+    with respx.mock(assert_all_called=False) as router:
+        route = router.get(_board_url(-5)).mock(return_value=httpx.Response(200, json={}))
+        with pytest.raises(ValidationError):
+            await get_board(-5)
+        assert not route.called
