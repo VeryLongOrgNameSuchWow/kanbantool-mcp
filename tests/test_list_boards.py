@@ -90,3 +90,34 @@ async def test_list_boards_propagates_http_error(_inject_client: KanbanToolClien
         with pytest.raises(KanbanToolHTTPError) as exc_info:
             await list_boards()
         assert exc_info.value.status_code == 500
+
+
+async def test_list_boards_malformed_entry_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    payload = {
+        "boards": [
+            {"id": 1, "name": "Eng"},
+            {"name": "no-id"},
+        ]
+    }
+    with respx.mock(assert_all_called=True) as router:
+        router.get(USERS_CURRENT_URL).mock(return_value=httpx.Response(200, json=payload))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await list_boards()
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
+async def test_list_boards_list_rooted_response_returns_empty(
+    _inject_client: KanbanToolClient,
+) -> None:
+    # Defensive parse: the API contract is a dict with a ``boards`` key, but if
+    # it ever responds with a bare list we fall through to ``[]`` rather than
+    # blowing up on ``.get``. Locks the ``isinstance(data, dict)`` else-branch.
+    with respx.mock(assert_all_called=True) as router:
+        router.get(USERS_CURRENT_URL).mock(return_value=httpx.Response(200, json=[]))
+        result = await list_boards()
+
+    assert result == []
