@@ -47,11 +47,16 @@ Write tools (M2):
 
 ## Phases
 
-- **M0** — Scaffold: package layout, CI, license, docs (this commit).
-- **M1** — Read tools: list_boards, get_board, search_tasks, get_task, recent_changes.
-- **M2** — Write tools: create_task, update_task, move_task, archive_task, add_comment, add_subtask, list_subtasks.
-- **M3** — Polish & release: error messages, retries, docs pass, PyPI publish.
+- **M0** — Scaffold: package layout, CI, license, docs. *Complete.*
+- **M1** — Read tools: list_boards, get_board, search_tasks, get_task, recent_changes. *Complete.*
+- **M2** — Write tools: create_task, update_task, move_task, archive_task, add_comment, add_subtask, list_subtasks. *Complete.*
+- **M3** — Polish & release: error messages, retries, docs pass, PyPI publish. *In progress.*
 
-## Testing
+## Codebase conventions
 
-Tests are offline only — use `respx` to mock the Kanban Tool HTTP. Don't introduce live-API tests outside the dedicated integration workflow.
+- **Client singleton** — `server._get_client()` is a lazy module-level singleton (`_client: KanbanToolClient | None`). The stdio MCP runs on a single asyncio loop on a single thread, so no lock around init. Tools call `_get_client()` per request; tests overwrite `server._client` via the `_inject_client` fixture.
+- **Test fixtures** — `config`, `client`, `_inject_client`, and `BASE_URL` live in `tests/conftest.py`. Test files consume them by parameter name; don't re-instantiate `Config` or `KanbanToolClient` inline. Tests are offline only — mock HTTP with `respx`.
+- **Secret scrubbing** — `client._scrub_secrets` runs `(?i)\bbearer\s+\S+` → `Bearer ***`. Applied to every error branch's `body_excerpt`, to 422 `field_errors` keys/values, and again in `KanbanToolValidationError.__str__` as belt-and-suspenders. Module-private and deliberately single-pattern: bearer auth is the only realistic leak path on this API.
+- **Pydantic models** — every model is `BaseModel` with `model_config = ConfigDict(extra="ignore")` (forward-compat with API additions). For fields that shadow Python builtins or use a different wire name, use `Field(alias="<wire>", default=None)` plus `populate_by_name=True` (e.g. `type_`, `lane_id` ↔ `workflow_stage_id`).
+- **Error surface** — typed ladder: `KanbanToolError` → `KanbanToolPermissionError`, `KanbanToolHTTPError` → `KanbanToolValidationError`, `KanbanToolTransportError`. All write tools route 4xx/5xx through `client._raise_for_status`; tools propagate the typed exception unchanged. Raw `pydantic.ValidationError` on response decode is a known gap (#28).
+- **`_patch_task` helper** — `server._patch_task(task_id, fields, *, method="PUT")` backs both `update_task` and `move_task`. Owns the `{"task": {...}}` envelope, outbound rename via `_PATCH_TASK_RENAMES`, None-skip ("omit, don't clear"), empty-fields `ValueError`, and `Task.model_validate`. To add a new caller-facing alias, extend `_PATCH_TASK_RENAMES`.
