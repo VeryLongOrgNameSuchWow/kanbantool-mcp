@@ -104,6 +104,20 @@ class Task(BaseModel):
     updated_at: str | None = None
 
 
+class Comment(BaseModel):
+    """A comment on a task. Mirrors the POST ``/tasks/{id}/comments.json``
+    response. Field names follow the wire format directly — no aliasing —
+    since the API's keys are already pleasant Python identifiers."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    text: str | None = None
+    user_id: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class ChangelogEntry(BaseModel):
     """A single entry from a board's changelog feed.
 
