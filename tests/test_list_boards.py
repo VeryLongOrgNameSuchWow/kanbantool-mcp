@@ -56,7 +56,7 @@ async def test_list_boards_happy_path(_inject_client: KanbanToolClient) -> None:
     # The compact /users/current payload omits detail-only collections.
     assert first.columns == []
     assert first.swimlanes == []
-    assert first.custom_fields == []
+    assert first.card_template is None
 
 
 async def test_list_boards_empty(_inject_client: KanbanToolClient) -> None:

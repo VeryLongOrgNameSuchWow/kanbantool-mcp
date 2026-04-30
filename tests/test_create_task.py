@@ -55,7 +55,7 @@ async def test_create_task_full_payload_renames_lane_id(_inject_client: KanbanTo
         "priority": "high",
         "due_date": "2026-05-15T00:00:00Z",
         "tags": "release,urgent",
-        "assignees": [11, 22],
+        "assigned_user_id": 11,
     }
     with respx.mock(assert_all_called=True) as router:
         route = router.post(TASKS_URL).mock(return_value=httpx.Response(201, json=response_payload))
@@ -95,7 +95,7 @@ async def test_create_task_full_payload_renames_lane_id(_inject_client: KanbanTo
     assert task.priority == "high"
     assert task.due_date == "2026-05-15T00:00:00Z"
     assert task.tags == "release,urgent"
-    assert task.assignees == [11, 22]
+    assert task.assigned_user_id == 11
 
 
 async def test_create_task_unset_optionals_omitted_not_nulled(

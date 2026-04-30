@@ -8,6 +8,7 @@ import respx
 
 from kanbantool_mcp.client import KanbanToolClient
 from kanbantool_mcp.exceptions import KanbanToolHTTPError, KanbanToolPermissionError
+from kanbantool_mcp.models import Task
 from kanbantool_mcp.server import get_task
 
 from .conftest import BASE_URL
@@ -31,13 +32,12 @@ async def test_get_task_happy_path(_inject_client: KanbanToolClient) -> None:
         "due_date": "2026-05-15T00:00:00Z",
         "start_date": "2026-04-30T00:00:00Z",
         "tags": "release,urgent",
-        "assignees": [11, 22],
-        "is_archived": False,
-        "is_blocked": True,
+        "assigned_user_id": 11,
+        "archived_at": None,
         "block_reason": "Waiting on review",
         "subtasks_count": 4,
-        "comment_count": 12,
-        "time_tracker_total": 3600,
+        "comments_count": 12,
+        "timers_total": 3600,
         "created_at": "2026-04-01T09:30:00Z",
         "updated_at": "2026-04-29T17:45:00Z",
         "extra_unknown_field": "ignored",
@@ -58,13 +58,14 @@ async def test_get_task_happy_path(_inject_client: KanbanToolClient) -> None:
     assert task.due_date == "2026-05-15T00:00:00Z"
     assert task.start_date == "2026-04-30T00:00:00Z"
     assert task.tags == "release,urgent"
-    assert task.assignees == [11, 22]
+    assert task.assigned_user_id == 11
+    assert task.archived_at is None
     assert task.is_archived is False
     assert task.is_blocked is True
     assert task.block_reason == "Waiting on review"
     assert task.subtasks_count == 4
-    assert task.comment_count == 12
-    assert task.time_tracker_total == 3600
+    assert task.comments_count == 12
+    assert task.timers_total == 3600
     assert task.created_at == "2026-04-01T09:30:00Z"
     assert task.updated_at == "2026-04-29T17:45:00Z"
 
@@ -93,10 +94,13 @@ async def test_get_task_minimal_payload(_inject_client: KanbanToolClient) -> Non
     assert task.board_id is None
     assert task.lane_id is None
     assert task.swimlane_id is None
-    assert task.assignees is None
+    assert task.assigned_user_id is None
     assert task.subtasks_count is None
-    assert task.comment_count is None
-    assert task.time_tracker_total is None
+    assert task.comments_count is None
+    assert task.timers_total is None
+    # Computed flags default to False when their backing fields are unset.
+    assert task.is_archived is False
+    assert task.is_blocked is False
 
 
 async def test_get_task_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
@@ -128,3 +132,24 @@ async def test_get_task_url_shape(_inject_client: KanbanToolClient) -> None:
     request = route.calls.last.request
     assert request.method == "GET"
     assert str(request.url) == _task_url(123)
+
+
+def test_task_is_archived_property_tracks_archived_at() -> None:
+    """``is_archived`` is True iff ``archived_at`` is set; absence is False."""
+    unarchived = Task.model_validate({"id": 1, "name": "live"})
+    assert unarchived.is_archived is False
+
+    explicit_null = Task.model_validate({"id": 2, "name": "live", "archived_at": None})
+    assert explicit_null.is_archived is False
+
+    archived = Task.model_validate({"id": 3, "name": "old", "archived_at": "2026-04-30T00:00:00Z"})
+    assert archived.is_archived is True
+
+
+def test_task_is_blocked_property_tracks_block_reason() -> None:
+    """``is_blocked`` is True iff ``block_reason`` is set; absence is False."""
+    unblocked = Task.model_validate({"id": 1, "name": "free"})
+    assert unblocked.is_blocked is False
+
+    blocked = Task.model_validate({"id": 2, "name": "stuck", "block_reason": "Waiting on review"})
+    assert blocked.is_blocked is True

@@ -26,7 +26,7 @@ async def test_search_tasks_happy_path(_inject_client: KanbanToolClient) -> None
                 "priority": "high",
                 "tags": "release,urgent",
                 "subtasks_count": 2,
-                "comment_count": 3,
+                "comments_count": 3,
                 "extra_unknown_field": "ignored",
             },
             {
@@ -50,7 +50,7 @@ async def test_search_tasks_happy_path(_inject_client: KanbanToolClient) -> None
     assert first.priority == "high"
     assert first.tags == "release,urgent"
     assert first.subtasks_count == 2
-    assert first.comment_count == 3
+    assert first.comments_count == 3
     assert second.id == 2
     assert second.name == "Write changelog"
     assert second.priority == 1

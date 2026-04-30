@@ -26,24 +26,25 @@ async def test_archive_task_happy_path(_inject_client: KanbanToolClient) -> None
     """Archiving a task issues PATCH /tasks/{id}.json with the flat
     ``{"_action": "archive"}`` sentinel body — NOT the ``{"task": {...}}``
     envelope used by update_task — and round-trips the response into a
-    ``Task`` with ``is_archived=True``."""
+    ``Task`` whose computed ``is_archived`` reflects the wire ``archived_at``."""
     response_payload = {
         "id": TASK_ID,
         "name": "Wrap up Q2 release",
         "board_id": 7,
-        "is_archived": True,
+        "archived_at": "2026-04-30T18:00:00Z",
     }
     with respx.mock(assert_all_called=True) as router:
         route = router.patch(TASK_URL).mock(return_value=httpx.Response(200, json=response_payload))
         task = await archive_task(task_id=TASK_ID)
 
     assert task.id == TASK_ID
+    assert task.archived_at == "2026-04-30T18:00:00Z"
     assert task.is_archived is True
 
     request = route.calls.last.request
     assert request.method == "PATCH"
     body = _request_body(route)
-    # Flat top-level sentinel — no "task" envelope, no "is_archived" field.
+    # Flat top-level sentinel — no "task" envelope, no "archived_at" field.
     assert body == {"_action": "archive"}
     assert "task" not in body
 
@@ -58,7 +59,7 @@ async def test_archive_task_already_archived_is_idempotent(
         "id": TASK_ID,
         "name": "Already done",
         "board_id": 7,
-        "is_archived": True,
+        "archived_at": "2026-04-30T18:00:00Z",
     }
     with respx.mock(assert_all_called=True) as router:
         route = router.patch(TASK_URL).mock(return_value=httpx.Response(200, json=response_payload))
@@ -107,7 +108,13 @@ async def test_archive_task_url_shape(_inject_client: KanbanToolClient) -> None:
     with respx.mock(assert_all_called=True) as router:
         route = router.patch(TASK_URL).mock(
             return_value=httpx.Response(
-                200, json={"id": TASK_ID, "name": "x", "board_id": 2, "is_archived": True}
+                200,
+                json={
+                    "id": TASK_ID,
+                    "name": "x",
+                    "board_id": 2,
+                    "archived_at": "2026-04-30T18:00:00Z",
+                },
             )
         )
         await archive_task(task_id=TASK_ID)
