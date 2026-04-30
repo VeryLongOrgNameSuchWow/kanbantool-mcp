@@ -37,5 +37,13 @@ async def list_boards() -> list[Board]:
     return [Board.model_validate(b) for b in raw]
 
 
+@mcp.tool
+async def get_board(board_id: int) -> Board:
+    """Fetch a board with its columns, swimlanes, and custom-field definitions."""
+    data = await _get_client().request("GET", f"boards/{board_id}")
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed board payload").
+    return Board.model_validate(data)
+
+
 def run() -> None:
     mcp.run()
