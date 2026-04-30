@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import httpx
 import pytest
 import respx
@@ -16,21 +14,7 @@ from kanbantool_mcp.exceptions import (
     KanbanToolTransportError,
 )
 
-BASE_URL = "https://testacct.kanbantool.com/api/v3/"
-
-
-@pytest.fixture
-def config() -> Config:
-    return Config.from_env()
-
-
-@pytest.fixture
-async def client(config: Config) -> AsyncIterator[KanbanToolClient]:
-    c = KanbanToolClient(config)
-    try:
-        yield c
-    finally:
-        await c.aclose()
+from .conftest import BASE_URL
 
 
 async def test_get_returns_parsed_dict(client: KanbanToolClient) -> None:
