@@ -243,6 +243,27 @@ async def test_create_task_401_raises_permission_error(
             await create_task(name="x", board_id=7)
 
 
+async def test_create_task_403_raises_permission_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """403 (token valid but not authorized to write to this board) surfaces as
+    ``KanbanToolPermissionError`` — distinct from a 422 validation failure."""
+    with respx.mock() as router:
+        router.post(TASKS_URL).mock(
+            return_value=httpx.Response(403, text="forbidden"),
+        )
+        with pytest.raises(KanbanToolPermissionError):
+            await create_task(name="x", board_id=7)
+
+
+async def test_create_task_500_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.post(TASKS_URL).mock(return_value=httpx.Response(500, text="server exploded"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await create_task(name="x", board_id=7)
+    assert exc_info.value.status_code == 500
+
+
 async def test_create_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """POST hits ``tasks.json`` exactly — no ``tasks.json.json`` double-suffix,
     no ``tasks/.json``, no query string."""

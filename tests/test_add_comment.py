@@ -110,3 +110,20 @@ async def test_add_comment_422_raises_validation_error(
     assert isinstance(err, KanbanToolValidationError)
     assert err.status_code == 422
     assert err.field_errors == {"text": ["can't be blank"]}
+
+
+async def test_add_comment_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.post(COMMENTS_URL).mock(return_value=httpx.Response(404, text="task not found"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await add_comment(task_id=TASK_ID, text="hi")
+    assert exc_info.value.status_code == 404
+    assert not isinstance(exc_info.value, KanbanToolValidationError)
+
+
+async def test_add_comment_500_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.post(COMMENTS_URL).mock(return_value=httpx.Response(500, text="server exploded"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await add_comment(task_id=TASK_ID, text="hi")
+    assert exc_info.value.status_code == 500
