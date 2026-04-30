@@ -113,6 +113,7 @@ class KanbanToolClient:
                 base_url=config.base_url,
                 headers={"Authorization": f"Bearer {config.api_token}"},
                 timeout=30.0,
+                follow_redirects=True,
             )
         )
 
