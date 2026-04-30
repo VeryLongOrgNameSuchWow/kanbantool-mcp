@@ -1,0 +1,130 @@
+"""Tests for the get_task MCP tool."""
+
+from __future__ import annotations
+
+import httpx
+import pytest
+import respx
+
+from kanbantool_mcp.client import KanbanToolClient
+from kanbantool_mcp.exceptions import KanbanToolHTTPError, KanbanToolPermissionError
+from kanbantool_mcp.server import get_task
+
+from .conftest import BASE_URL
+
+
+def _task_url(task_id: int) -> str:
+    return f"{BASE_URL}tasks/{task_id}.json"
+
+
+async def test_get_task_happy_path(_inject_client: KanbanToolClient) -> None:
+    payload = {
+        "id": 4242,
+        "name": "Ship the thing",
+        "description": "Cut a release once CI is green.",
+        "board_id": 7,
+        "workflow_stage_id": 100,
+        "swimlane_id": 200,
+        "position": 3,
+        "priority": "high",
+        "color": "#ff0000",
+        "due_date": "2026-05-15T00:00:00Z",
+        "start_date": "2026-04-30T00:00:00Z",
+        "tags": "release,urgent",
+        "assignees": [11, 22],
+        "is_archived": False,
+        "is_blocked": True,
+        "block_reason": "Waiting on review",
+        "subtasks_count": 4,
+        "comment_count": 12,
+        "time_tracker_total": 3600,
+        "created_at": "2026-04-01T09:30:00Z",
+        "updated_at": "2026-04-29T17:45:00Z",
+        "extra_unknown_field": "ignored",
+    }
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_task_url(4242)).mock(return_value=httpx.Response(200, json=payload))
+        task = await get_task(4242)
+
+    assert task.id == 4242
+    assert task.name == "Ship the thing"
+    assert task.description == "Cut a release once CI is green."
+    assert task.board_id == 7
+    assert task.lane_id == 100
+    assert task.swimlane_id == 200
+    assert task.position == 3
+    assert task.priority == "high"
+    assert task.color == "#ff0000"
+    assert task.due_date == "2026-05-15T00:00:00Z"
+    assert task.start_date == "2026-04-30T00:00:00Z"
+    assert task.tags == "release,urgent"
+    assert task.assignees == [11, 22]
+    assert task.is_archived is False
+    assert task.is_blocked is True
+    assert task.block_reason == "Waiting on review"
+    assert task.subtasks_count == 4
+    assert task.comment_count == 12
+    assert task.time_tracker_total == 3600
+    assert task.created_at == "2026-04-01T09:30:00Z"
+    assert task.updated_at == "2026-04-29T17:45:00Z"
+
+
+async def test_get_task_accepts_integer_priority(_inject_client: KanbanToolClient) -> None:
+    """Some accounts return ``priority`` as an int rather than an enum string."""
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_task_url(7)).mock(
+            return_value=httpx.Response(200, json={"id": 7, "name": "x", "priority": 2})
+        )
+        task = await get_task(7)
+
+    assert task.priority == 2
+
+
+async def test_get_task_minimal_payload(_inject_client: KanbanToolClient) -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_task_url(1)).mock(
+            return_value=httpx.Response(200, json={"id": 1, "name": "Tiny"})
+        )
+        task = await get_task(1)
+
+    assert task.id == 1
+    assert task.name == "Tiny"
+    assert task.description is None
+    assert task.board_id is None
+    assert task.lane_id is None
+    assert task.swimlane_id is None
+    assert task.assignees is None
+    assert task.subtasks_count is None
+    assert task.comment_count is None
+    assert task.time_tracker_total is None
+
+
+async def test_get_task_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.get(_task_url(999)).mock(return_value=httpx.Response(404, text="not found"))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await get_task(999)
+        assert exc_info.value.status_code == 404
+        assert "not found" in exc_info.value.body_excerpt
+
+
+async def test_get_task_401_raises_permission_error(_inject_client: KanbanToolClient) -> None:
+    with respx.mock() as router:
+        router.get(_task_url(1)).mock(return_value=httpx.Response(401, text="unauthorized"))
+        with pytest.raises(KanbanToolPermissionError):
+            await get_task(1)
+
+
+async def test_get_task_url_shape(_inject_client: KanbanToolClient) -> None:
+    """Verify the tool hits exactly ``GET tasks/{id}.json`` (no query string,
+    no double-suffix, correct base URL)."""
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(_task_url(123)).mock(
+            return_value=httpx.Response(200, json={"id": 123, "name": "Probe"})
+        )
+        await get_task(123)
+
+    assert route.call_count == 1
+    request = route.calls.last.request
+    assert request.method == "GET"
+    assert str(request.url) == _task_url(123)

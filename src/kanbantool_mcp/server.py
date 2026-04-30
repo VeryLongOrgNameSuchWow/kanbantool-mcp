@@ -48,6 +48,19 @@ async def get_board(board_id: int) -> Board:
 
 
 @mcp.tool
+async def get_task(task_id: int) -> Task:
+    """Fetch a task by id.
+
+    Surfaces the task's headline metadata along with subtask count, comment
+    count, and total tracked time. Use the dedicated subtask/comment/time
+    tools to drill into the nested collections.
+    """
+    data = await _get_client().request("GET", f"tasks/{task_id}")
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
+    return Task.model_validate(data)
+
+
+@mcp.tool
 async def recent_changes(board_id: int, since: datetime | None = None) -> list[ChangelogEntry]:
     """Fetch the changelog feed for a board — the change-tracking primitive
     that stands in for webhooks (Kanban Tool ships none).
