@@ -101,9 +101,8 @@ async def recent_changes(board_id: int, since: datetime | None = None) -> list[C
     Poll sparingly: 30-120s cadence, not per-keystroke."""
     params = {"since": since.isoformat()} if since is not None else None
     data = await _get_client().request("GET", f"boards/{board_id}/changelog", params=params)
-    raw = data.get("changelog", []) if isinstance(data, dict) else []
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed changelog payload").
-    return [ChangelogEntry.model_validate(entry) for entry in raw]
+    return [ChangelogEntry.model_validate(entry) for entry in data]
 
 
 # Hard ceiling on a single page. Defends against an LLM hallucinating a huge
@@ -151,7 +150,10 @@ async def search_tasks(
         params["board_id"] = board_id
 
     data = await _get_client().request("GET", "tasks/search", params=params)
-    raw = data.get("tasks", []) if isinstance(data, dict) else []
+    # When ``limit``/``page`` are supplied (always, here), the API wraps
+    # results in ``{"results": [...], "pagination": {...}}``. Without those
+    # params it returns a bare list — but we always paginate.
+    raw = data.get("results", []) if isinstance(data, dict) else []
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed search payload").
     return [Task.model_validate(t) for t in raw]
 

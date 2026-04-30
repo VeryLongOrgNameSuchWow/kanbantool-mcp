@@ -20,28 +20,26 @@ def _changelog_url(board_id: int) -> str:
 
 
 async def test_recent_changes_happy_path(_inject_client: KanbanToolClient) -> None:
-    payload = {
-        "changelog": [
-            {
-                "id": 1001,
-                "created_at": "2026-04-30T10:15:00Z",
-                "what": "created",
-                "user_id": 7,
-                "changed_object_type": "Task",
-                "changed_object_id": 555,
-                "description": "Ada Lovelace created Write spec",
-                "data": {"user_initials": "AL", "task_name": "Write spec"},
-                "extra_unknown_field": "ignored",
-            },
-            {
-                "id": 1000,
-                "created_at": "2026-04-30T09:00:00Z",
-                "what": "moved",
-                "changed_object_type": "Task",
-                "changed_object_id": 555,
-            },
-        ]
-    }
+    payload = [
+        {
+            "id": 1001,
+            "created_at": "2026-04-30T10:15:00Z",
+            "what": "created",
+            "user_id": 7,
+            "changed_object_type": "Task",
+            "changed_object_id": 555,
+            "description": "Ada Lovelace created Write spec",
+            "data": {"user_initials": "AL", "task_name": "Write spec"},
+            "extra_unknown_field": "ignored",
+        },
+        {
+            "id": 1000,
+            "created_at": "2026-04-30T09:00:00Z",
+            "what": "moved",
+            "changed_object_type": "Task",
+            "changed_object_id": 555,
+        },
+    ]
     with respx.mock(assert_all_called=True) as router:
         router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=payload))
         result = await recent_changes(42)
@@ -69,9 +67,7 @@ async def test_recent_changes_passes_since_as_query_param(
 ) -> None:
     since = datetime(2026, 4, 30, 8, 0, 0, tzinfo=UTC)
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(_changelog_url(42)).mock(
-            return_value=httpx.Response(200, json={"changelog": []})
-        )
+        route = router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=[]))
         await recent_changes(42, since=since)
 
     request = route.calls.last.request
@@ -82,9 +78,7 @@ async def test_recent_changes_omits_since_when_none(
     _inject_client: KanbanToolClient,
 ) -> None:
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(_changelog_url(42)).mock(
-            return_value=httpx.Response(200, json={"changelog": []})
-        )
+        route = router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=[]))
         await recent_changes(42)
 
     request = route.calls.last.request
@@ -95,9 +89,7 @@ async def test_recent_changes_omits_since_when_none(
 
 async def test_recent_changes_empty(_inject_client: KanbanToolClient) -> None:
     with respx.mock(assert_all_called=True) as router:
-        router.get(_changelog_url(42)).mock(
-            return_value=httpx.Response(200, json={"changelog": []})
-        )
+        router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=[]))
         result = await recent_changes(42)
 
     assert result == []
@@ -128,9 +120,7 @@ async def test_recent_changes_via_fastmcp_entrypoint_accepts_iso_string(
     pass ``since`` as plain ISO text."""
     iso = "2026-04-30T08:00:00+00:00"
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(_changelog_url(42)).mock(
-            return_value=httpx.Response(200, json={"changelog": []})
-        )
+        route = router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=[]))
         tool = await mcp.get_tool("recent_changes")
         assert tool is not None
         await tool.run({"board_id": 42, "since": iso})
