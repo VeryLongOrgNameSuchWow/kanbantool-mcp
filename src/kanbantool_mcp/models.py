@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class Column(BaseModel):
@@ -126,11 +126,18 @@ class Task(BaseModel):
     # ``linked_tasks``, ``task_dependencies``. Tracked under the High-Value
     # tier of #38; the 15 numbered custom fields need a dict-shaped design call.
 
+    # ``@computed_field`` is required so pydantic v2 includes the derived
+    # boolean in ``model_dump()`` and ``model_json_schema()`` — a bare
+    # ``@property`` is invisible to the serialiser, which means FastMCP would
+    # never surface the flag to the LLM. The ``prop-decorator`` ignore quiets
+    # the pydantic v2 ``@computed_field`` + ``@property`` decorator-order quirk.
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_archived(self) -> bool:
         """True iff the task has an archival timestamp."""
         return self.archived_at is not None
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_blocked(self) -> bool:
         """True iff the task has a non-empty block reason."""

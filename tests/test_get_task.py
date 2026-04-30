@@ -153,3 +153,39 @@ def test_task_is_blocked_property_tracks_block_reason() -> None:
 
     blocked = Task.model_validate({"id": 2, "name": "stuck", "block_reason": "Waiting on review"})
     assert blocked.is_blocked is True
+
+
+def test_task_model_dump_includes_computed_flags() -> None:
+    """``is_archived`` / ``is_blocked`` must appear in ``model_dump()`` so that
+    FastMCP serialises them onto the wire. A bare ``@property`` is invisible
+    to pydantic v2's serialiser; only ``@computed_field`` is picked up."""
+    archived_and_blocked = Task.model_validate(
+        {
+            "id": 1,
+            "name": "stuck-and-archived",
+            "archived_at": "2026-04-30T12:00:00Z",
+            "block_reason": "Waiting on review",
+        }
+    )
+    dumped = archived_and_blocked.model_dump()
+    assert "is_archived" in dumped
+    assert "is_blocked" in dumped
+    assert dumped["is_archived"] is True
+    assert dumped["is_blocked"] is True
+
+    live_and_unblocked = Task.model_validate({"id": 2, "name": "fresh"})
+    dumped = live_and_unblocked.model_dump()
+    assert "is_archived" in dumped
+    assert "is_blocked" in dumped
+    assert dumped["is_archived"] is False
+    assert dumped["is_blocked"] is False
+
+
+def test_task_model_json_schema_advertises_computed_flags() -> None:
+    """The serialization JSON schema (the one FastMCP shows the LLM for the
+    *output* of a tool) must list both computed flags. Computed fields are
+    output-only, so they live in the serialization schema, not the default
+    validation one."""
+    schema = Task.model_json_schema(mode="serialization")
+    assert "is_archived" in schema["properties"]
+    assert "is_blocked" in schema["properties"]

@@ -39,10 +39,11 @@ annotated with reproduction steps. The assistant resolves the board, calls
   "board_id": 4711,
   "lane_id": 90001,
   "priority": "high",
-  "assignees": [12],
+  "assigned_user_id": 12,
+  "archived_at": null,
   "is_archived": false,
   "subtasks_count": 0,
-  "comment_count": 0,
+  "comments_count": 0,
   "created_at": "2026-04-30T11:14:08Z"
 }
 ```
