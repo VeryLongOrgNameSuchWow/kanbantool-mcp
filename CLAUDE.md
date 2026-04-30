@@ -26,7 +26,6 @@ Read tools (M1):
 - `search_tasks`
 - `get_task`
 - `recent_changes`
-- `list_subtasks`
 
 Write tools (M2):
 - `create_task`
@@ -35,6 +34,7 @@ Write tools (M2):
 - `archive_task`
 - `add_comment`
 - `add_subtask`
+- `list_subtasks`
 
 ## Kanban Tool API quirks
 
@@ -48,8 +48,8 @@ Write tools (M2):
 ## Phases
 
 - **M0** — Scaffold: package layout, CI, license, docs (this commit).
-- **M1** — Read tools: list_boards, get_board, search_tasks, get_task, recent_changes, list_subtasks.
-- **M2** — Write tools: create_task, update_task, move_task, archive_task, add_comment, add_subtask.
+- **M1** — Read tools: list_boards, get_board, search_tasks, get_task, recent_changes.
+- **M2** — Write tools: create_task, update_task, move_task, archive_task, add_comment, add_subtask, list_subtasks.
 - **M3** — Polish & release: error messages, retries, docs pass, PyPI publish.
 
 ## Testing

@@ -9,7 +9,7 @@ from fastmcp import FastMCP
 
 from .client import KanbanToolClient
 from .config import Config
-from .models import Board, ChangelogEntry, Comment, Task
+from .models import Board, ChangelogEntry, Comment, Subtask, Task
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
@@ -404,6 +404,41 @@ async def add_comment(task_id: int, text: str) -> Comment:
     data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed comment payload").
     return Comment.model_validate(data)
+
+
+@mcp.tool
+async def list_subtasks(task_id: int) -> list[Subtask]:
+    """List subtasks attached to a task.
+
+    Returns each subtask's id, name, completion state, and position. Returns
+    an empty list if the task has no subtasks (or if the API returns a body
+    without a ``subtasks`` key — defensive parse mirroring ``list_boards``).
+    """
+    data = await _get_client().request("GET", f"tasks/{task_id}/subtasks")
+    raw = data.get("subtasks", []) if isinstance(data, dict) else []
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtasks payload").
+    return [Subtask.model_validate(s) for s in raw]
+
+
+@mcp.tool
+async def add_subtask(task_id: int, title: str) -> Subtask:
+    """Add a subtask to a task.
+
+    ``title`` is the human-readable label for the subtask; it maps to the
+    API's ``name`` field on the wire. The kwarg is exposed as ``title`` to
+    keep the LLM-facing surface consistent regardless of upstream naming.
+
+    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
+    on a 422 with parsed ``field_errors``; ``KanbanToolHTTPError`` on other
+    4xx/5xx; ``KanbanToolPermissionError`` on 401/403.
+    """
+    body = {"subtask": {"name": title}}
+    data = await _get_client().request("POST", f"tasks/{task_id}/subtasks", json=body)
+    # Trusting the bare-object response shape (mirrors get_task on main); no
+    # defensive ``{"subtask": {...}}`` unwrap. M3 can revisit if the API ever
+    # surprises us.
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtask payload").
+    return Subtask.model_validate(data)
 
 
 def run() -> None:
