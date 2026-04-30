@@ -17,7 +17,7 @@ Please report security issues privately — **do not** open a public GitHub
 issue or pull request.
 
 Preferred: GitHub private security advisories at
-<https://github.com/VeryLongNicknameSuchWow/kanbantool-mcp/security/advisories/new>.
+<https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/security/advisories/new>.
 
 Email fallback: <riohno@tutamail.com>.
 
