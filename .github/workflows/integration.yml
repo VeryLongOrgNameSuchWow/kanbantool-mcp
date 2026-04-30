@@ -22,6 +22,17 @@ jobs:
           enable-cache: true
       - run: uv python install 3.13
       - run: uv sync --dev
+      # Without this guard, missing/empty repo secrets would resolve to "" and
+      # the conftest skip-on-missing path would mark every test SKIPPED, which
+      # the workflow then reports as success — green check that means
+      # "nothing ran." Fail loudly instead.
+      - name: Verify live secrets are bound
+        env:
+          KANBANTOOL_DOMAIN_TEST: ${{ secrets.KANBANTOOL_DOMAIN_TEST }}
+          KANBANTOOL_API_TOKEN_TEST: ${{ secrets.KANBANTOOL_API_TOKEN_TEST }}
+        run: |
+          : "${KANBANTOOL_DOMAIN_TEST:?KANBANTOOL_DOMAIN_TEST repo secret is not set}"
+          : "${KANBANTOOL_API_TOKEN_TEST:?KANBANTOOL_API_TOKEN_TEST repo secret is not set}"
       # Only the read tools are exercised live — write tools would create real
       # artifacts on the test account every run, and the #62 spike already
       # validated the write path. Read coverage proves the wire contract for
