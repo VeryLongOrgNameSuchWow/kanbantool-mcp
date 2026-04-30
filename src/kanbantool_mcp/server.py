@@ -6,11 +6,18 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
-from pydantic import Field, validate_call
+from pydantic import Field, ValidationError, validate_call
 
 from .client import KanbanToolClient
 from .config import Config
+from .exceptions import KanbanToolHTTPError
 from .models import Board, ChangelogEntry, Comment, Subtask, Task
+
+# Mirrors ``client._BODY_EXCERPT_LIMIT`` so payload-shape errors surface a
+# truncated repr consistent with HTTP-error excerpts. Kept inline (rather than
+# imported from ``client``) because that constant is module-private — exposing
+# it would widen the API for one caller.
+_PAYLOAD_EXCERPT_LIMIT = 200
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
@@ -37,8 +44,19 @@ async def list_boards() -> list[Board]:
     """List boards visible to the authenticated user."""
     data = await _get_client().request("GET", "users/current")
     raw = data.get("boards", []) if isinstance(data, dict) else []
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed boards payload").
-    return [Board.model_validate(b) for b in raw]
+    try:
+        return [Board.model_validate(b) for b in raw]
+    except ValidationError as exc:
+        # The HTTP call succeeded (200) but a board entry was missing required
+        # fields or otherwise malformed. Wrap as KanbanToolHTTPError so the
+        # error surface stays consistent with 4xx/5xx flows — callers always
+        # see a typed KanbanToolError, never a raw pydantic exception.
+        excerpt = f"malformed boards payload: {exc!r}"[:_PAYLOAD_EXCERPT_LIMIT]
+        raise KanbanToolHTTPError(
+            "Kanban Tool API returned a malformed boards payload.",
+            status_code=200,
+            body_excerpt=excerpt,
+        ) from exc
 
 
 @mcp.tool
