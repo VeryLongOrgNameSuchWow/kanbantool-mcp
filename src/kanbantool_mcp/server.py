@@ -290,5 +290,37 @@ async def update_task(
     )
 
 
+@mcp.tool
+async def archive_task(task_id: int) -> Task:
+    """Archive a task.
+
+    Archiving on Kanban Tool v3 is a sentinel-action call rather than a
+    field update: ``PATCH /tasks/{id}.json`` with the flat top-level body
+    ``{"_action": "archive"}``. It does NOT go through the standard
+    ``{"task": {...}}`` partial-update envelope, so this tool intentionally
+    bypasses ``_patch_task`` and shapes the request itself. The same
+    endpoint serves the symmetric ``unarchive``/``delete``/``undelete``
+    actions (not currently exposed as tools).
+
+    Idempotent by design: re-archiving an already-archived task issues
+    the same PATCH and returns the task in its archived state. The wire
+    is assumed to respond 200 with the archived ``Task`` regardless of
+    prior state — verify M3: confirm against a real account that
+    re-archiving returns 200 (not 4xx). If it does 4xx, add a status-only
+    fallback (e.g. 409/422 → ``GET /tasks/{id}.json``) — never branch on
+    response body wording, which is locale- and version-fragile.
+
+    Returns the archived ``Task`` so the caller can confirm
+    ``is_archived=True``.
+
+    Raises ``KanbanToolHTTPError`` on 4xx/5xx (including a 404 if the task
+    id is unknown), and ``KanbanToolPermissionError`` on 401/403.
+    """
+    body = {"_action": "archive"}
+    data = await _get_client().request("PATCH", f"tasks/{task_id}", json=body)
+    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
+    return Task.model_validate(data)
+
+
 def run() -> None:
     mcp.run()
