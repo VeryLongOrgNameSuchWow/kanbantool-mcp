@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
@@ -186,8 +186,23 @@ async def create_task(
     return Task.model_validate(data)
 
 
-async def _patch_task(task_id: int, fields: dict[str, Any]) -> Task:
-    """PUT a partial-update body to ``/tasks/{task_id}.json``.
+# Caller-facing aliases mapped to their wire names. ``lane_id`` and
+# ``column_id`` are both ergonomic surfaces for the same wire field
+# (``workflow_stage_id``); ``update_task`` exposes ``lane_id`` and
+# ``move_task`` exposes ``column_id``, so the helper accepts either.
+_PATCH_TASK_RENAMES: dict[str, str] = {
+    "lane_id": "workflow_stage_id",
+    "column_id": "workflow_stage_id",
+}
+
+
+async def _patch_task(
+    task_id: int,
+    fields: dict[str, Any],
+    *,
+    method: Literal["PUT", "PATCH"] = "PUT",
+) -> Task:
+    """Send a partial-update body to ``/tasks/{task_id}.json``.
 
     Shared between ``update_task`` (#9) and ``move_task`` (#10) — the two tools
     differ only in *which* fields they expose to the LLM, not in how the wire
@@ -197,15 +212,23 @@ async def _patch_task(task_id: int, fields: dict[str, Any]) -> Task:
     Behavior:
 
     - Drops keys whose value is ``None`` (treat ``None`` as "omit", not
-      "clear" — Kanban Tool's PUT is Rails strong-params and ignores nulls
-      rather than clearing the column).
-    - Renames the caller-facing ``lane_id`` key to the wire's
-      ``workflow_stage_id``, mirroring the inbound alias on the ``Task`` model
+      "clear" — Kanban Tool's partial update ignores nulls rather than
+      clearing the column).
+    - Renames caller-facing aliases to their wire names per
+      ``_PATCH_TASK_RENAMES`` (e.g. ``lane_id``/``column_id`` →
+      ``workflow_stage_id``), mirroring the inbound alias on the ``Task`` model
       and the outbound rename in ``create_task``.
     - Wraps the cleaned dict in the ``{"task": {...}}`` Rails envelope.
-    - Raises ``ValueError`` if no fields remain after cleaning — issuing a
-      ``PUT`` with an empty body would round-trip the task unchanged and
-      consume a quota slot for nothing, so we reject it client-side.
+    - Raises ``ValueError`` if no fields remain after cleaning — issuing the
+      request with an empty body would round-trip the task unchanged and
+      consume a quota slot for nothing, so we reject it client-side. The
+      message lists the caller's *own* field names (built from ``fields``
+      before the None-skip pass), so each tool gets an actionable hint
+      scoped to its surface.
+
+    ``method`` selects between ``PUT`` (the default, used by ``update_task``)
+    and ``PATCH`` (used by ``move_task``, matching the Kanban Tool API v3
+    convention for partial updates). Both shapes are accepted by the API.
 
     Returns the updated ``Task`` parsed from the response body.
     """
@@ -213,18 +236,18 @@ async def _patch_task(task_id: int, fields: dict[str, Any]) -> Task:
     for key, value in fields.items():
         if value is None:
             continue
-        wire_key = "workflow_stage_id" if key == "lane_id" else key
+        wire_key = _PATCH_TASK_RENAMES.get(key, key)
         cleaned[wire_key] = value
 
     if not cleaned:
-        raise ValueError(
-            "No fields to update: pass at least one of name, description, "
-            "board_id, lane_id, swimlane_id, position, priority, color, "
-            "due_date, start_date, tags, assignees."
-        )
+        # Build the message from the caller's *original* field names so the
+        # error is scoped to whichever surface (update_task / move_task) the
+        # LLM actually called.
+        available = ", ".join(fields.keys())
+        raise ValueError(f"No fields to update: pass at least one of {available}.")
 
     body = {"task": cleaned}
-    data = await _get_client().request("PUT", f"tasks/{task_id}", json=body)
+    data = await _get_client().request(method, f"tasks/{task_id}", json=body)
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
     return Task.model_validate(data)
 
@@ -287,6 +310,46 @@ async def update_task(
             "tags": tags,
             "assignees": assignees,
         },
+    )
+
+
+@mcp.tool
+async def move_task(
+    task_id: int,
+    column_id: int | None = None,
+    swimlane_id: int | None = None,
+    position: int | None = None,
+) -> Task:
+    """Move a task between columns, swimlanes, or positions on its board.
+
+    At least one of ``column_id`` / ``swimlane_id`` / ``position`` must be
+    provided; calling with all three unset raises ``ValueError`` before any
+    HTTP is issued.
+
+    There is no dedicated ``/move`` endpoint in Kanban Tool API v3 — column
+    and lane transitions are expressed as a partial update on the task. This
+    tool exists as a separate, intent-revealing surface so the LLM picks the
+    right tool for "move this card", and the implementation rides on the
+    same patch helper as ``update_task``.
+
+    ``column_id`` is the caller-facing alias for the wire's
+    ``workflow_stage_id`` (mirroring how ``lane_id`` is exposed elsewhere) —
+    pass the same id you'd see on a fetched ``Task.lane_id``.
+
+    Raises ``KanbanToolValidationError`` (a subclass of ``KanbanToolHTTPError``)
+    on a 422 with parsed ``field_errors`` — the typical case is a column id
+    that doesn't belong to this task's board, surfaced via the existing error
+    pipeline. Raises ``KanbanToolHTTPError`` on other 4xx/5xx;
+    ``KanbanToolPermissionError`` on 401/403.
+    """
+    return await _patch_task(
+        task_id,
+        {
+            "column_id": column_id,
+            "swimlane_id": swimlane_id,
+            "position": position,
+        },
+        method="PATCH",
     )
 
 
