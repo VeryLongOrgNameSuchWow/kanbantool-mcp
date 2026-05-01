@@ -76,6 +76,13 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.ty.src]
+# ``.claude/worktrees/`` holds in-flight Claude Code agent checkouts of this
+# same repo. Without this exclude, ty traverses those copies and reports
+# duplicate-symbol / cross-tree import errors that have nothing to do with
+# the working tree. The directory is gitignored and session-local.
+exclude = [".claude"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Live integration tests hit a real Kanban Tool account — exclude from the
