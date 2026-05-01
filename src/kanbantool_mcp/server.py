@@ -519,6 +519,11 @@ async def reorder_subtasks(
     task, raises ``KanbanToolValidationError`` from the API."""
     if not ids:
         raise ValueError("reorder_subtasks requires at least one subtask id.")
+    if len(set(ids)) != len(ids):
+        # The API would 422 on duplicate ids; refusing client-side mirrors
+        # the empty-list ``ValueError`` and surfaces the intent ("did you
+        # mean to repeat that id?") instead of a typed-validation round-trip.
+        raise ValueError(f"reorder_subtasks ``ids`` must be unique; got duplicates in {ids!r}.")
     # Wire shape: ``PUT /subtasks/reorder.json`` takes ``{"task_id": int,
     # "ids": "comma,separated,string"}`` — the API expects a literal string
     # joined with commas, not a JSON array. Tool surface keeps the LLM-friendly

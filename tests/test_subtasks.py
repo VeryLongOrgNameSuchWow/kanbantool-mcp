@@ -444,7 +444,8 @@ async def test_delete_subtask_returns_soft_deleted_subtask(
     _inject_client: KanbanToolClient,
 ) -> None:
     """The API soft-deletes — DELETE returns the modified ``Subtask`` with
-    ``deleted_at`` populated. Lock that contract."""
+    ``deleted_at`` populated. Lock that contract end-to-end through the
+    typed model."""
     response_body = {
         "id": 7,
         "name": "old",
@@ -458,10 +459,16 @@ async def test_delete_subtask_returns_soft_deleted_subtask(
 
     assert isinstance(result, Subtask)
     assert result.id == 7
-    # ``deleted_at`` is present on the wire; the model drops it via
-    # ``extra="ignore"``, so its absence on the typed object is fine. The
-    # important contract is that the call returns a typed Subtask, not raw
-    # pydantic ValidationError, on the soft-delete path.
+    # ``deleted_at`` is the soft-delete signal; the typed model surfaces it
+    # so callers can confirm the operation actually took (vs. a no-op).
+    assert result.deleted_at == "2026-05-01T15:00:00.000+02:00"
+
+
+async def test_subtask_deleted_at_default_is_none() -> None:
+    """A live (non-deleted) ``Subtask`` has ``deleted_at`` defaulting to
+    ``None`` — it's only populated on the soft-delete path."""
+    sub = Subtask.model_validate({"id": 1, "name": "live"})
+    assert sub.deleted_at is None
 
 
 async def test_delete_subtask_url_shape(_inject_client: KanbanToolClient) -> None:
@@ -550,6 +557,15 @@ async def test_reorder_subtasks_empty_list_raises_value_error(
     """Empty ``ids`` is a programmer error; the API would either no-op or 422."""
     with pytest.raises(ValueError, match="at least one"):
         await reorder_subtasks(task_id=TASK_ID, ids=[])
+
+
+async def test_reorder_subtasks_rejects_duplicate_ids(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """Duplicates would 422 server-side; refuse client-side with the same
+    intent-revealing ``ValueError`` style as the empty-list guard."""
+    with pytest.raises(ValueError, match="must be unique"):
+        await reorder_subtasks(task_id=TASK_ID, ids=[1, 1, 2])
 
 
 async def test_reorder_subtasks_rejects_non_positive_task_id(
