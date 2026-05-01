@@ -209,6 +209,105 @@ GitHub side (`Settings → Environments → pypi`):
   approval click). Off by default; turn on if you want belt-and-
   suspenders before each upload.
 
+## release-please authentication (GitHub App)
+
+`release-please.yml` runs as the **kanbantool-mcp-release-please** GitHub
+App, not as the workflow's default `GITHUB_TOKEN`. This is load-bearing,
+and it's worth understanding why before touching the wiring.
+
+### Why an App, not GITHUB_TOKEN
+
+GitHub has an anti-loop rule: tags and PRs created by `GITHUB_TOKEN` do
+not fire downstream workflows. With `release-please.yml` running as
+`GITHUB_TOKEN`:
+
+- The release PR it opens has **zero** CI runs (no `pull_request:`
+  trigger fires for bot PRs from `GITHUB_TOKEN`). The strict main
+  ruleset requires the `test (3.11/3.12/3.13)` checks to pass, so the
+  PR can't merge without intervention.
+- After the release PR is merged, the `vX.Y.Z` tag push from
+  `release-please-action` does not fire `release.yml` either — so PyPI
+  publish has to be `workflow_dispatch`-ed by hand.
+
+App-minted installation tokens are not subject to the anti-loop rule.
+Both pain points disappear with the App in place.
+
+### Where the App lives
+
+| Field | Value |
+| --- | --- |
+| App name | `kanbantool-mcp-release-please` |
+| Owner | `@VeryLongOrgNameSuchWow` (org-level App) |
+| Permissions | `contents: write`, `pull-requests: write`, `metadata: read` |
+| Installed on | `kanbantool-mcp` only (single-repo scope) |
+| Repo secrets | `RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY` |
+| Workflow step | `actions/create-github-app-token@v2` (pinned by SHA in `release-please.yml`) |
+
+### Rotating the private key
+
+Required when the existing key is exposed, or as a routine annual rotation.
+
+1. Org settings → Developer settings → GitHub Apps → `kanbantool-mcp-release-please` → **Generate a private key**. A new `*.pem` downloads.
+2. Update the repo secret:
+   ```bash
+   gh secret set RELEASE_PLEASE_APP_PRIVATE_KEY \
+     --repo VeryLongOrgNameSuchWow/kanbantool-mcp \
+     < /path/to/new-key.pem
+   ```
+3. (Optional) On the App settings page, **Delete** the old private key once you've confirmed the new one works (the next `release-please.yml` run will).
+4. Securely shred the local `*.pem` file (`shred -u`).
+
+Do **not** commit the `.pem` to the repo. `*.pem` is gitignored as
+defense-in-depth, but the secrets path is the only correct destination.
+
+### Recovering if the App breaks
+
+If the App is suspended, uninstalled, or its private key is rotated
+without the secret being updated, `release-please.yml` will fail at the
+`create-github-app-token` step. The workflow log surfaces the JWT decode
+error clearly. Re-issue the key per "Rotating" above; no other workflow
+runs are affected (CI on PRs uses `GITHUB_TOKEN`, which is independent).
+
+If the App must be replaced entirely (e.g. ownership transfer), the
+flow is the same as the original setup — see the original PR `#110`
+for the full recipe.
+
+## When a release PR has 0 CI checks
+
+Symptom: `gh pr view` on the release PR shows `mergeable: MERGEABLE,
+state: BLOCKED` with no `test (3.X)` rows. This shouldn't happen post-
+App-auth, but if it does (e.g. release-please ran during an App outage
+and fell back to `GITHUB_TOKEN`), there are two break-glass paths:
+
+### Empty commit on the bot's branch
+
+Cleanest — actually proves CI passes before merge:
+
+```bash
+git fetch origin
+git checkout release-please--branches--main--components--kanbantool-mcp
+git commit --allow-empty -m "ci: trigger CI on release PR"
+git push
+git checkout main
+```
+
+CI fires, ruleset is satisfied, merge normally.
+
+### Admin bypass (faster, skips CI)
+
+The main ruleset has `Repository admin` as a bypass actor (added in
+ruleset id `15784452`). Repo admins can `gh pr merge --admin`:
+
+```bash
+gh pr merge <release-pr-number> --squash --delete-branch --admin \
+  --repo VeryLongOrgNameSuchWow/kanbantool-mcp
+```
+
+Use this only when you know the diff is identical to the
+release-please intent (`__version__` bump + `CHANGELOG.md` prepend) and
+no separate verification of the test matrix is needed. Otherwise prefer
+the empty-commit route.
+
 ## Re-running a failed release
 
 If the release workflow fails mid-flight (e.g. PyPI was down):
