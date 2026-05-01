@@ -7,6 +7,11 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Bind to the ``pypi`` environment so the protection rules around it (tag
+    # policy, optional required reviewers) gate the publish step. The PyPI
+    # trusted-publisher entry must be configured for environment ``pypi``;
+    # see ``Environment name`` on https://pypi.org/manage/account/publishing/.
+    environment: pypi
     permissions:
       id-token: write
       contents: write
