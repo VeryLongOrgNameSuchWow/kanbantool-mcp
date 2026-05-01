@@ -1,6 +1,9 @@
 [project]
 name = "kanbantool-mcp"
-version = "0.1.0"
+# Version is read from ``src/kanbantool_mcp/__init__.py`` at build time —
+# see ``[tool.hatch.version]`` below. Single source: ``__version__`` is the
+# only string that needs bumping for a release.
+dynamic = ["version"]
 description = "MCP server bridging Claude Code with the Kanban Tool API v3."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,6 +51,12 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+# Single source of truth for the package version. Update ``__version__`` in
+# ``__init__.py`` to bump; ``project.version`` resolves dynamically at build
+# time. See https://hatch.pypa.io/latest/version/.
+path = "src/kanbantool_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kanbantool_mcp"]
