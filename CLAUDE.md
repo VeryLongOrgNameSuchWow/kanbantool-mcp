@@ -69,7 +69,10 @@ M5 — Custom-field writes & comment polish:
 - **M0** — Scaffold: package layout, CI, license, docs. *Complete.*
 - **M1** — Read tools: list_boards, get_board, search_tasks, get_task, recent_changes. *Complete.*
 - **M2** — Write tools: create_task, update_task, move_task, archive_task, add_comment, add_subtask, list_subtasks. *Complete.*
-- **M3** — Polish & release: error messages, retries, docs pass, PyPI publish. *In progress.*
+- **M3** — Polish & release: error messages, retries, docs pass, PyPI publish. *Complete.*
+- **M4** — Completeness: custom-field reads + time-tracker tools. *Complete.*
+- **M5** — Custom-field writes + comment polish: `set_custom_field`, `delete_comment` (the API has no comment-edit endpoint), and the `add_comment` wire-field bugfix (`text` → `content`). *Complete.*
+- **M6** — v1.0 readiness: SemVer commitment policy, README pass, error-message audit, RELEASING.md updates. *In progress.*
 
 ## Codebase conventions
 
