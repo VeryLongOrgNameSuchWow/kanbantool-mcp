@@ -17,8 +17,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from kanbantool_mcp import server
 from kanbantool_mcp.client import KanbanToolClient
 from kanbantool_mcp.config import Config
+from kanbantool_mcp.server import list_boards, search_tasks
 
 
 @pytest.fixture(autouse=True)
@@ -43,3 +45,31 @@ async def live_client() -> AsyncIterator[KanbanToolClient]:
         yield c
     finally:
         await c.aclose()
+
+
+@pytest.fixture
+def _inject_live_client(
+    monkeypatch: pytest.MonkeyPatch, live_client: KanbanToolClient
+) -> KanbanToolClient:
+    """Wire the live client into ``server._client`` so the MCP tools use it."""
+    monkeypatch.setattr(server, "_client", live_client)
+    return live_client
+
+
+@pytest.fixture
+async def populated_board_id(_inject_live_client: KanbanToolClient) -> int:
+    """Discover any board on the test account that has at least one non-archived task.
+
+    The integration suite validates wire-contract shapes, not the contents of
+    a specific board, so we don't pin a particular id. Skip if the account has
+    no usable board — the maintainer needs to seed one before these tests can run.
+    """
+    boards = await list_boards()
+    for board in boards:
+        tasks = await search_tasks(query="archived:false", board_id=board.id)
+        if tasks:
+            return board.id
+    pytest.skip(
+        "no board with non-archived tasks on the test account; "
+        "seed at least one board with one task before running live tests."
+    )
