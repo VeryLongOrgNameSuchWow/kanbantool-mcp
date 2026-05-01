@@ -3,7 +3,7 @@
 An MCP server that connects Claude Code (and other MCP clients) to a [Kanban Tool](https://kanbantool.com/) account.
 
 [![CI](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/kanbantool-mcp.svg?label=pypi%20%28coming%20soon%29)](https://pypi.org/project/kanbantool-mcp/)
+[![PyPI](https://img.shields.io/pypi/v/kanbantool-mcp.svg)](https://pypi.org/project/kanbantool-mcp/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -13,7 +13,7 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow â€
 
 ## Status
 
-**Pre-alpha.** The tool surface is settled but unproven against real workloads, and the package is not yet on PyPI ([#19](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/19)). Install from the git repo for now (see below). API breakage between commits is possible until v0.1.0 ships.
+**Alpha.** The 12-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback â€” pin a specific version if you need stability across upgrades.
 
 ## Install
 
@@ -49,7 +49,7 @@ Add to your MCP client's `mcp.json`:
 }
 ```
 
-### From PyPI (once v0.1.0 ships)
+### From PyPI
 
 ```json
 {

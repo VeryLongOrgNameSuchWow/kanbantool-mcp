@@ -28,7 +28,7 @@ annotated with reproduction steps. The assistant resolves the board, calls
     name="Fix login bug",
     board_id=4711,
     priority="high",
-    assignees=[12],
+    assigned_user_id=12,
   )
 ```
 

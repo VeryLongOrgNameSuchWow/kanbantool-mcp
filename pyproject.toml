@@ -1,6 +1,6 @@
 [project]
 name = "kanbantool-mcp"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "MCP server bridging Claude Code with the Kanban Tool API v3."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,11 +12,16 @@ authors = [
 keywords = ["mcp", "kanbantool", "kanban", "claude", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Communications",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
 ]
 dependencies = [
     "fastmcp>=2.0",
@@ -46,6 +51,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kanbantool_mcp"]
+
+[tool.hatch.build.targets.sdist]
+# CLAUDE.md is internal Claude Code orientation for this repo — useful for
+# contributors via git, but not something a PyPI consumer should be inspecting.
+exclude = ["CLAUDE.md"]
 
 [tool.ruff]
 line-length = 100
