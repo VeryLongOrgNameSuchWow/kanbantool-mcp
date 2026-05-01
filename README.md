@@ -13,7 +13,7 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 
 ## Status
 
-**Alpha.** The 18-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
+**Alpha.** The 19-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
 
 ## Install
 
@@ -88,6 +88,7 @@ Add to your MCP client's `mcp.json`:
 | `whoami` | Fetch the authenticated user's profile — id, role flags, locale. Use to resolve "me" / "myself" in user requests. | — |
 | `get_user` | Fetch one user by id. | `user_id` |
 | `list_board_collaborators` | List users with access to a board (the canonical user-discovery surface — the API has no bulk list-users endpoint). | `board_id` |
+| `list_custom_field_definitions` | List the per-board metadata for the 15 ``custom_field_*`` slots (label, type, enabled state). Use to interpret the values surfaced on `Task.custom_fields`. | `board_id` |
 
 (`ping` exists as a transport smoke test; not listed above.)
 

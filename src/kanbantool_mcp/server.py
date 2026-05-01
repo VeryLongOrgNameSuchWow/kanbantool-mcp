@@ -11,7 +11,16 @@ from pydantic import BaseModel, Field, ValidationError, validate_call
 from .client import KanbanToolClient
 from .config import Config
 from .exceptions import KanbanToolHTTPError
-from .models import Board, ChangelogEntry, Collaborator, Comment, Subtask, Task, User
+from .models import (
+    Board,
+    ChangelogEntry,
+    Collaborator,
+    Comment,
+    CustomFieldDefinition,
+    Subtask,
+    Task,
+    User,
+)
 
 # Mirrors ``client._BODY_EXCERPT_LIMIT`` so payload-shape errors surface a
 # truncated repr consistent with HTTP-error excerpts. Kept inline (rather than
@@ -126,6 +135,50 @@ async def list_board_collaborators(
     with ``get_user(id)``."""
     board = await get_board(board_id)
     return board.collaborators
+
+
+@mcp.tool
+@validate_call
+async def list_custom_field_definitions(
+    board_id: Annotated[int, Field(ge=1)],
+) -> list[CustomFieldDefinition]:
+    """List the per-board metadata for the 15 custom-field slots.
+
+    Each task has up to 15 ``custom_field_N`` values surfaced as
+    ``Task.custom_fields["custom_field_N"]``. The slot number alone tells
+    you nothing about what's IN it on a given board — call this tool once
+    per board to learn the labels, types, and enabled state, then
+    interpret task values accordingly.
+
+    Returns the 15 definitions in slot order (1..15) regardless of which
+    are ``enabled``. Slots with ``enabled=False`` are usually dormant on
+    that board's UI even if individual tasks happen to carry values."""
+    # Sourced from ``Board.card_template[custom_field_N]`` — same one
+    # HTTP call as ``get_board`` (the metadata is inline on the detail
+    # payload). The tool is sugar that filters to the custom-field slots
+    # and adds the explicit slot number for caller convenience.
+    board = await get_board(board_id)
+    template = board.card_template or {}
+    definitions: list[CustomFieldDefinition] = []
+    for key, defn in template.items():
+        if not key.startswith("custom_field_"):
+            continue
+        if not isinstance(defn, dict):
+            # Defensive against unexpected card_template shapes; skip
+            # silently rather than fail the whole call.
+            continue
+        try:
+            slot = int(key[len("custom_field_") :])
+        except ValueError:
+            continue
+        # The wire entry has ``label``/``type``/``enabled``/``options``/
+        # ``position`` already; we add the ``slot`` since the dict key is
+        # the only place it lived.
+        definitions.append(
+            _decode(CustomFieldDefinition, {**defn, "slot": slot}, label="custom field")
+        )
+    definitions.sort(key=lambda d: d.slot)
+    return definitions
 
 
 @mcp.tool

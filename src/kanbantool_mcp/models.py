@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 
 class Column(BaseModel):
@@ -198,10 +198,20 @@ class Task(BaseModel):
     external_id: str | None = None
     # Caller-supplied URL for cross-system linking.
     external_link: str | None = None
-    # v0.2.0+: ``custom_field_1..15`` (15 numbered fields, dict-shaped wrapper
-    # design call still pending) and ``changelogs``/``time_trackers`` (heavy
-    # nested data — exposed via dedicated tools rather than inlined here)
-    # remain dropped via ``extra="ignore"`` for now. Tracked under #38.
+
+    # --- Custom fields -------------------------------------------------------
+    # The wire payload exposes ``custom_field_1`` .. ``custom_field_15`` as 15
+    # top-level keys. Their per-board *meaning* (label, type, enabled state)
+    # lives in ``Board.card_template[custom_field_N]`` — fetch that via
+    # ``list_custom_field_definitions(board_id)`` to know what each slot
+    # holds. Collapse the 15 keys into one dict-typed surface here so
+    # callers don't have to enumerate them; the ``_collect_custom_fields``
+    # validator does the lift before the rest of the model parses.
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+
+    # v0.2.0+: ``changelogs`` / ``time_trackers`` (heavy nested data —
+    # exposed via dedicated tools rather than inlined here) remain dropped
+    # via ``extra="ignore"`` for now. Tracked under #38.
 
     # The Kanban Tool API serialises empty collections as JSON ``null`` rather
     # than ``[]`` for several of these additive fields (live spike confirmed
@@ -222,6 +232,28 @@ class Task(BaseModel):
     @classmethod
     def _none_to_empty_list(cls, value: Any) -> Any:
         return [] if value is None else value
+
+    # The wire spreads custom field values across ``custom_field_1`` ..
+    # ``custom_field_15`` top-level keys. Lift them into ``self.custom_fields``
+    # before the rest of the model parses so callers see a single dict instead
+    # of 15 individual attributes. ``extra="ignore"`` then drops the
+    # now-pulled-out raw keys silently.
+    @model_validator(mode="before")
+    @classmethod
+    def _collect_custom_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        # Only lift if the caller hasn't already supplied a ``custom_fields``
+        # dict directly (e.g. in tests that round-trip ``model_dump`` output).
+        if "custom_fields" in data:
+            return data
+        custom = {k: data[k] for k in data if k.startswith("custom_field_")}
+        if not custom:
+            return data
+        # Build a new dict — don't mutate the caller's input.
+        rest = {k: v for k, v in data.items() if not k.startswith("custom_field_")}
+        rest["custom_fields"] = custom
+        return rest
 
     # ``@computed_field`` is required so pydantic v2 includes the derived
     # boolean in ``model_dump()`` and ``model_json_schema()`` — a bare
@@ -357,3 +389,35 @@ class User(BaseModel):
     # times or messages in the user's local context.
     timezone: str | None = None
     locale: str | None = None
+
+
+class CustomFieldDefinition(BaseModel):
+    """Per-board metadata for one of the ``custom_field_1..15`` slots.
+
+    Sourced from ``Board.card_template[custom_field_N]`` and surfaced via
+    the ``list_custom_field_definitions`` MCP tool. Use this to interpret
+    the raw values on ``Task.custom_fields`` — the slot number alone tells
+    you nothing about what's in it on a given board.
+    """
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    # Slot number (1..15). The value is added by the tool when assembling
+    # the result list — the wire payload doesn't carry it explicitly because
+    # the slot is encoded in the parent dict's key.
+    slot: int
+    # Human-readable label set by the board owner (e.g. "Customer", "ETA").
+    label: str | None = None
+    # Field type — observed values: ``"text"``. Other types likely include
+    # ``"number"``, ``"date"``, ``"dropdown"`` per the Kanban Tool UI; treat
+    # this as a hint string rather than a closed enum.
+    type_: str | None = Field(default=None, alias="type", serialization_alias="type")
+    # ``True`` when the field is shown on this board's UI / available for
+    # writes. ``False`` slots are usually dormant — values may exist on
+    # individual tasks but the LLM should generally skip them.
+    enabled: bool | None = None
+    # Comma-separated values for dropdown-typed fields; empty for free-text.
+    options: str | None = None
+    # UI position on the card detail panel — useful when you want to
+    # surface fields in the order the user sees them.
+    position: int | None = None

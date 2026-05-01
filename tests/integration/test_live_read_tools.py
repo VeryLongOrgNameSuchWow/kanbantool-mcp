@@ -19,13 +19,22 @@ any particular board name or id — see the ``populated_board_id`` fixture.
 from __future__ import annotations
 
 from kanbantool_mcp.client import KanbanToolClient
-from kanbantool_mcp.models import Board, ChangelogEntry, Collaborator, Subtask, Task, User
+from kanbantool_mcp.models import (
+    Board,
+    ChangelogEntry,
+    Collaborator,
+    CustomFieldDefinition,
+    Subtask,
+    Task,
+    User,
+)
 from kanbantool_mcp.server import (
     get_board,
     get_task,
     get_user,
     list_board_collaborators,
     list_boards,
+    list_custom_field_definitions,
     list_subtasks,
     recent_changes,
     search_tasks,
@@ -240,3 +249,43 @@ async def test_list_board_collaborators_against_populated_board(
     assert first.id > 0
     assert first.name is None or isinstance(first.name, str)
     assert first.active is None or isinstance(first.active, bool)
+
+
+async def test_list_custom_field_definitions_against_populated_board(
+    _inject_live_client: KanbanToolClient, populated_board_id: int
+) -> None:
+    """Lock the wire-shape contract for the per-board custom-field metadata
+    surface. Kanban Tool boards always have 15 slots whether they're
+    enabled or not — the trial seed fixture has them all disabled, but the
+    structural assertions below tolerate either state."""
+    definitions = await list_custom_field_definitions(populated_board_id)
+
+    assert isinstance(definitions, list)
+    # All known Kanban Tool plans expose 15 numbered slots, even on the free
+    # trial. If this ever changes upstream, expect this to be a real signal.
+    assert len(definitions) == 15
+    assert all(isinstance(d, CustomFieldDefinition) for d in definitions)
+    assert [d.slot for d in definitions] == list(range(1, 16))
+    first = definitions[0]
+    # Type-only locks for the rest: labels are user-customisable, types vary
+    # per board, etc. ``enabled`` is always Boolean-or-None.
+    assert first.label is None or isinstance(first.label, str)
+    assert first.type_ is None or isinstance(first.type_, str)
+    assert first.enabled is None or isinstance(first.enabled, bool)
+
+
+async def test_get_task_collects_custom_field_values(
+    _inject_live_client: KanbanToolClient, populated_board_id: int
+) -> None:
+    """The Task before-validator pulls ``custom_field_1..15`` into a single
+    ``custom_fields`` dict. Verify the lift happens against a real task —
+    on the welcome board they're all ``None``, but the keys must be there."""
+    search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
+    assert search_hits, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits[0].id
+    task = await get_task(task_id)
+
+    # On any board with all 15 slots emitted (every Kanban Tool board, per
+    # the metadata test above), the dict should have all 15 keys present.
+    assert isinstance(task.custom_fields, dict)
+    assert set(task.custom_fields.keys()) == {f"custom_field_{i}" for i in range(1, 16)}

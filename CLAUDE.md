@@ -44,6 +44,9 @@ User discovery tools (post-M3):
 - `get_user` — fetch one user by id
 - `list_board_collaborators` — board's user roster (no bulk list-users endpoint exists)
 
+M4 — Completeness:
+- `list_custom_field_definitions` — per-board metadata for the 15 `custom_field_*` slots (label, type, enabled state); pair with `Task.custom_fields[custom_field_N]` for values
+
 ## Kanban Tool API quirks
 
 - Per-account base URL: `https://{KANBANTOOL_DOMAIN}.kanbantool.com/api/v3/`. There is no global host.
