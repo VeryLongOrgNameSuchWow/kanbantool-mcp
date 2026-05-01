@@ -27,9 +27,9 @@ def _board_url(board_id: int) -> str:
 
 async def test_whoami_returns_typed_user(_inject_client: KanbanToolClient) -> None:
     payload = {
-        "id": 1383923,
-        "name": "riohno",
-        "initials": "R",
+        "id": 1,
+        "name": "Test User A",
+        "initials": "TA",
         "is_account_admin": True,
         "is_account_owner": False,
         "is_project_manager": True,
@@ -37,11 +37,11 @@ async def test_whoami_returns_typed_user(_inject_client: KanbanToolClient) -> No
         "last_activity_on": "2026-05-01",
         "last_login_at": "2026-05-01T08:00:00+00:00",
         "created_at": "2026-04-30T17:00:00+00:00",
-        "timezone": "Europe/Warsaw",
+        "timezone": "Etc/UTC",
         "locale": "en",
         # Heavy nested fields the API surfaces but the model drops via
         # ``extra="ignore"`` — keep one in the fixture so the test locks it.
-        "account": {"id": 99, "name": "VeryLong"},
+        "account": {"id": 99, "name": "TestAccount"},
         "settings": {"theme": "dark"},
     }
     with respx.mock(assert_all_called=True) as router:
@@ -49,11 +49,11 @@ async def test_whoami_returns_typed_user(_inject_client: KanbanToolClient) -> No
         result = await whoami()
 
     assert isinstance(result, User)
-    assert result.id == 1383923
-    assert result.name == "riohno"
+    assert result.id == 1
+    assert result.name == "Test User A"
     assert result.is_account_admin is True
     assert result.is_account_owner is False
-    assert result.timezone == "Europe/Warsaw"
+    assert result.timezone == "Etc/UTC"
     # ``extra="ignore"`` drops the unknown nested fields.
     dump = result.model_dump()
     assert "account" not in dump
@@ -89,19 +89,19 @@ async def test_whoami_malformed_payload_raises_http_error(
 
 async def test_get_user_returns_typed_user(_inject_client: KanbanToolClient) -> None:
     payload = {
-        "id": 1383921,
-        "name": "Magdalena Bartczak",
-        "initials": "MB",
+        "id": 2,
+        "name": "Test User B",
+        "initials": "TB",
         "is_account_admin": True,
         "is_account_owner": True,
     }
     with respx.mock(assert_all_called=True) as router:
-        router.get(_user_url(1383921)).mock(return_value=httpx.Response(200, json=payload))
-        result = await get_user(1383921)
+        router.get(_user_url(2)).mock(return_value=httpx.Response(200, json=payload))
+        result = await get_user(2)
 
     assert isinstance(result, User)
-    assert result.id == 1383921
-    assert result.name == "Magdalena Bartczak"
+    assert result.id == 2
+    assert result.name == "Test User B"
     assert result.is_account_owner is True
 
 
