@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Manual dispatch as the escape hatch when a tag was created via
+  # ``GITHUB_TOKEN`` (e.g. by release-please-action), which by GitHub's
+  # anti-loop rule does NOT fire ``push: tags`` triggers. Dispatch with
+  # ``--ref v0.X.Y`` to build + publish for that tag. Long-term fix is to
+  # give release-please a PAT or GitHub App so its tag pushes count as
+  # user pushes.
+  workflow_dispatch:
 
 jobs:
   release:
