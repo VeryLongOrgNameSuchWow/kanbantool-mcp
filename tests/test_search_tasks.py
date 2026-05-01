@@ -145,6 +145,28 @@ async def test_search_tasks_500_raises_http_error(_inject_client: KanbanToolClie
         assert "boom" in exc_info.value.body_excerpt
 
 
+async def test_search_tasks_malformed_result_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 200 with a result entry missing the required ``id`` field surfaces
+    as ``KanbanToolHTTPError(status_code=200)`` with a ``malformed``-tagged
+    excerpt — never a raw ``pydantic.ValidationError``."""
+    payload = {
+        "results": [
+            {"id": 1, "name": "ok"},
+            {"name": "no-id"},  # missing id
+        ],
+        "pagination": {"results_count": 2, "page": 1, "pages_count": 1},
+    }
+    with respx.mock(assert_all_called=True) as router:
+        router.get(SEARCH_URL).mock(return_value=httpx.Response(200, json=payload))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await search_tasks(query="name:foo")
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
 async def test_search_tasks_drops_unknown_task_fields(
     _inject_client: KanbanToolClient,
 ) -> None:

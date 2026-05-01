@@ -119,6 +119,23 @@ async def test_get_task_401_raises_permission_error(_inject_client: KanbanToolCl
             await get_task(1)
 
 
+async def test_get_task_malformed_payload_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 200 with a payload missing required fields surfaces as
+    ``KanbanToolHTTPError(status_code=200)`` with a ``malformed``-tagged
+    excerpt — never a raw ``pydantic.ValidationError``."""
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_task_url(1)).mock(
+            return_value=httpx.Response(200, json={"name": "no-id"}),
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await get_task(1)
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
 async def test_get_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """Verify the tool hits exactly ``GET tasks/{id}.json`` (no query string,
     no double-suffix, correct base URL)."""

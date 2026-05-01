@@ -102,6 +102,23 @@ async def test_archive_task_500_raises_http_error(_inject_client: KanbanToolClie
     assert exc_info.value.status_code == 500
 
 
+async def test_archive_task_malformed_response_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 200 with a response body missing the required ``id`` field surfaces
+    as ``KanbanToolHTTPError(status_code=200)`` with a ``malformed``-tagged
+    excerpt — never a raw ``pydantic.ValidationError``."""
+    with respx.mock() as router:
+        router.patch(TASK_URL).mock(
+            return_value=httpx.Response(200, json={"name": "no-id"}),
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await archive_task(task_id=TASK_ID)
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
 async def test_archive_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """PATCH hits ``tasks/{id}.json`` exactly — no ``/archive`` path segment,
     no double ``.json``, no query string, no trailing-slash artifact."""
