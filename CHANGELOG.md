@@ -5,12 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.0...v0.2.1) (2026-05-01)
+## [0.2.2] - 2026-05-01
 
+Re-publish of v0.2.1 contents. v0.2.1 was tagged and a GitHub Release was
+created, but PyPI publishing did not run because tags pushed by
+``GITHUB_TOKEN`` (which release-please-action uses) do not fire ``push:``
+triggers in other workflows by GitHub's anti-loop rule. v0.2.2 is the
+same set of changes plus the workflow_dispatch escape hatch we added
+during diagnosis, pushed under a developer signature so the publish
+pipeline fires normally.
 
 ### Bug Fixes
 
-* **release:** escape brackets in CHANGELOG-section awk regex ([#91](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/91)) ([2d5e695](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/2d5e695d78a3c6d15e4dcecb74db617a9959ee5a)), closes [#90](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/90)
+- **release:** escape brackets in CHANGELOG-section awk regex (#91, originally
+  intended for v0.2.1). Closes #90.
+
+### CI
+
+- Add ``workflow_dispatch`` trigger to ``release.yml`` with a ``tag`` input as
+  a manual-publish escape hatch (#95, #96).
+- Re-enable the ``push: branches: [main]`` trigger on ``release-please.yml``
+  now that the org policy allows GitHub Actions to create PRs (#94).
+- Switch ``release-please.yml`` to ``workflow_dispatch`` only during the
+  earlier org-permission gap (#92) — superseded by #94 in the same release.
+
+## [0.2.1] - 2026-05-01
+
+> **Note:** v0.2.1 was tagged but **not published to PyPI** due to the
+> auto-publish gap described above. Use **v0.2.2** instead, which contains
+> the same code changes. The v0.2.1 GitHub Release is retained for
+> traceability only.
+
+### Bug Fixes
+
+- **release:** escape brackets in CHANGELOG-section awk regex (#91). Closes #90.
 
 ## [0.2.0] - 2026-05-01
 
@@ -141,5 +169,7 @@ Initial release.
 - `Column.name` is nullable for the synthetic root stage that parents the
   real columns; consumers wanting only display columns filter by `parent_id`.
 
+[0.2.2]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/releases/tag/v0.1.0
