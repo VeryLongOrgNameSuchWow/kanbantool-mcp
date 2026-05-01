@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, validate_call
 from .client import KanbanToolClient
 from .config import Config
 from .exceptions import KanbanToolHTTPError
-from .models import Board, ChangelogEntry, Comment, Subtask, Task
+from .models import Board, ChangelogEntry, Collaborator, Comment, Subtask, Task, User
 
 # Mirrors ``client._BODY_EXCERPT_LIMIT`` so payload-shape errors surface a
 # truncated repr consistent with HTTP-error excerpts. Kept inline (rather than
@@ -88,6 +88,44 @@ async def list_boards() -> list[Board]:
     data = await _get_client().request("GET", "users/current")
     raw = data.get("boards", []) if isinstance(data, dict) else []
     return _decode_list(Board, raw, label="boards")
+
+
+@mcp.tool
+async def whoami() -> User:
+    """Fetch the authenticated user's profile.
+
+    Returns the ``User`` you're acting as — id, name, role flags, locale,
+    timezone. Use this to resolve "me" / "myself" references in user
+    requests (``assign to me`` → ``assigned_user_id`` from this response)
+    or to show the LLM whose perspective it's operating from."""
+    data = await _get_client().request("GET", "users/current")
+    return _decode(User, data, label="user")
+
+
+@mcp.tool
+@validate_call
+async def get_user(user_id: Annotated[int, Field(ge=1)]) -> User:
+    """Fetch one user by id. Useful after ``list_board_collaborators`` finds
+    a candidate by name — call this to confirm role flags and active state
+    before assigning. Raises ``KanbanToolHTTPError(404)`` for unknown ids."""
+    data = await _get_client().request("GET", f"users/{user_id}")
+    return _decode(User, data, label="user")
+
+
+@mcp.tool
+@validate_call
+async def list_board_collaborators(
+    board_id: Annotated[int, Field(ge=1)],
+) -> list[Collaborator]:
+    """List the users with access to ``board_id``.
+
+    The Kanban Tool API v3 has no bulk list-users endpoint, so this is the
+    canonical way to discover user IDs for ``assigned_user_id`` on tasks.
+    Costs one HTTP call (the same as ``get_board`` — collaborators come
+    inline on the detail payload). For richer per-user fields, follow up
+    with ``get_user(id)``."""
+    board = await get_board(board_id)
+    return board.collaborators
 
 
 @mcp.tool

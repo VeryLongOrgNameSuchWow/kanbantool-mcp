@@ -82,6 +82,9 @@ Add to your MCP client's `mcp.json`:
 | `add_comment` | Post a comment on a task. | `task_id`, `text` |
 | `list_subtasks` | List subtasks attached to a task. | `task_id` |
 | `add_subtask` | Add a subtask to a task. | `task_id`, `title` |
+| `whoami` | Fetch the authenticated user's profile — id, role flags, locale. Use to resolve "me" / "myself" in user requests. | — |
+| `get_user` | Fetch one user by id. | `user_id` |
+| `list_board_collaborators` | List users with access to a board (the canonical user-discovery surface — the API has no bulk list-users endpoint). | `board_id` |
 
 (`ping` exists as a transport smoke test; not listed above.)
 

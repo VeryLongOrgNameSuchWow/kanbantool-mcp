@@ -66,6 +66,12 @@ class Board(BaseModel):
     # Detail-only collections; absent from list_boards' compact payload, hence defaults.
     columns: list[Column] = Field(default_factory=list, alias="workflow_stages")
     swimlanes: list[Swimlane] = Field(default_factory=list)
+    # The user-facing roster of board members. The API v3 has no bulk
+    # list-users endpoint, so this is the canonical way to discover user
+    # IDs for ``assigned_user_id`` on tasks. ``Collaborator`` is defined
+    # below; the forward reference resolves via ``from __future__ import
+    # annotations`` + pydantic's lazy resolution at validate time.
+    collaborators: list[Collaborator] = Field(default_factory=list)
     # ``card_template`` is the API's per-board "which card fields are shown"
     # config — a dict keyed by field name (``description``, ``priority``,
     # ``custom_field_1``, ...) whose values describe each field's enabled
@@ -298,3 +304,52 @@ class ChangelogEntry(BaseModel):
     # Action-specific payload (e.g. ``user_initials``, ``task_name``,
     # ``workflow_stage_name``). Shape varies by ``what``.
     data: dict[str, Any] | None = None
+
+
+class Collaborator(BaseModel):
+    """A user with access to a specific board.
+
+    Inline on ``Board.collaborators[]`` — the API v3 has no bulk-list-users
+    endpoint, so this is the canonical way to discover user IDs for
+    assignment workflows.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    name: str | None = None
+    initials: str | None = None
+    # ``True`` for users still allowed to act on the board, ``False`` for
+    # suspended / removed members. Useful when callers want to ignore stale
+    # entries that the wire still reports.
+    active: bool | None = None
+
+
+class User(BaseModel):
+    """An account-scoped user.
+
+    Returned from ``GET /users/{id}.json`` (and its ``/users/current.json``
+    redirect alias). Surfaces the LLM-meaningful subset of the wire shape;
+    heavy nested structures (``account``, ``customizations``, ``settings``,
+    ``groups``) are dropped via ``extra="ignore"`` and can be promoted to
+    typed sub-models when an MCP tool actually needs them.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    name: str | None = None
+    initials: str | None = None
+    # Role flags — a single user can hold any combination of these.
+    is_account_admin: bool | None = None
+    is_account_owner: bool | None = None
+    is_project_manager: bool | None = None
+    is_suspended: bool | None = None
+    # ISO 8601 strings — match the existing convention on Task/Board.
+    last_activity_on: str | None = None
+    last_login_at: str | None = None
+    created_at: str | None = None
+    # Account-level locale + timezone surfaced for LLMs that want to render
+    # times or messages in the user's local context.
+    timezone: str | None = None
+    locale: str | None = None

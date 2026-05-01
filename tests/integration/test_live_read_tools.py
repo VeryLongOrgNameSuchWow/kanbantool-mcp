@@ -19,14 +19,17 @@ any particular board name or id — see the ``populated_board_id`` fixture.
 from __future__ import annotations
 
 from kanbantool_mcp.client import KanbanToolClient
-from kanbantool_mcp.models import Board, ChangelogEntry, Subtask, Task
+from kanbantool_mcp.models import Board, ChangelogEntry, Collaborator, Subtask, Task, User
 from kanbantool_mcp.server import (
     get_board,
     get_task,
+    get_user,
+    list_board_collaborators,
     list_boards,
     list_subtasks,
     recent_changes,
     search_tasks,
+    whoami,
 )
 
 
@@ -190,3 +193,50 @@ async def test_list_subtasks_and_inline_task_subtasks_agree(
     assert isinstance(task.subtasks, list)
     assert all(isinstance(s, Subtask) for s in task.subtasks)
     assert [s.id for s in subtasks] == [s.id for s in task.subtasks]
+
+
+async def test_whoami_returns_authenticated_user(
+    _inject_live_client: KanbanToolClient,
+) -> None:
+    """``whoami`` resolves through the ``/users/current.json`` 302-redirect
+    alias (see #57) and returns the typed User. Locks shape-only assertions
+    so the test stays valid as the account's profile drifts."""
+    me = await whoami()
+    assert isinstance(me, User)
+    assert me.id > 0
+    # ``name`` and ``initials`` are nullable per the model but should be
+    # populated for any real account. Type-only check tolerates either way.
+    assert me.name is None or isinstance(me.name, str)
+    assert me.initials is None or isinstance(me.initials, str)
+    # Role flags should at minimum be Boolean-or-None (never raise).
+    assert me.is_account_admin is None or isinstance(me.is_account_admin, bool)
+
+
+async def test_get_user_round_trips_against_whoami(
+    _inject_live_client: KanbanToolClient,
+) -> None:
+    """``whoami`` returns id; ``get_user(id)`` should return a User whose id
+    matches. Cheaper than locking specific account details."""
+    me = await whoami()
+    fetched = await get_user(me.id)
+    assert isinstance(fetched, User)
+    assert fetched.id == me.id
+
+
+async def test_list_board_collaborators_against_populated_board(
+    _inject_live_client: KanbanToolClient, populated_board_id: int
+) -> None:
+    """The board's ``collaborators[]`` is the canonical user-discovery
+    surface (no bulk list-users endpoint exists). Verifies the Board model
+    decodes the field and the wrapper tool propagates it."""
+    collaborators = await list_board_collaborators(populated_board_id)
+    assert isinstance(collaborators, list)
+    # Any account with at least one user (i.e. the authenticated one) on the
+    # board should report >= 1 collaborator. Type-only assertions for the
+    # rest tolerate locale / suspension state drift.
+    assert len(collaborators) >= 1
+    assert all(isinstance(c, Collaborator) for c in collaborators)
+    first = collaborators[0]
+    assert first.id > 0
+    assert first.name is None or isinstance(first.name, str)
+    assert first.active is None or isinstance(first.active, bool)

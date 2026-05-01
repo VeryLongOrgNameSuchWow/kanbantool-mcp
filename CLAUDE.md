@@ -36,6 +36,11 @@ Write tools (M2):
 - `add_subtask`
 - `list_subtasks`
 
+User discovery tools (post-M3):
+- `whoami` — current user (resolves "me" / "myself")
+- `get_user` — fetch one user by id
+- `list_board_collaborators` — board's user roster (no bulk list-users endpoint exists)
+
 ## Kanban Tool API quirks
 
 - Per-account base URL: `https://{KANBANTOOL_DOMAIN}.kanbantool.com/api/v3/`. There is no global host.
