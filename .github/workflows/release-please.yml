@@ -17,17 +17,12 @@ name: release-please
 # See https://github.com/googleapis/release-please-action and
 # ``RELEASING.md`` for the full flow.
 #
-# Currently set to ``workflow_dispatch`` only: the parent
-# ``VeryLongOrgNameSuchWow`` org enforces ``default_workflow_permissions:
-# read`` and blocks the "Allow GitHub Actions to create and approve pull
-# requests" toggle at the org level (the repo-level toggle in Settings →
-# Actions is greyed out). With those restrictions, release-please cannot
-# create the release PR — every ``push`` fire failed with
-# "GitHub Actions is not permitted to create or approve pull requests."
-# Re-enable the ``push`` trigger once the org policy allows write workflow
-# permissions (Org → Settings → Actions → "Workflow permissions"). Until
-# then, cut releases via ``RELEASING.md``'s manual flow.
+# Triggers: ``push: branches: [main]`` is the production flow; the
+# ``workflow_dispatch:`` is kept available for manual reruns when debugging
+# release-please's parsing or when the auto-trigger needs a one-off bypass.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
