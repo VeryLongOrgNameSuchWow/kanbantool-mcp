@@ -379,7 +379,10 @@ async def _patch_task(
         # error is scoped to whichever surface (update_task / move_task) the
         # LLM actually called.
         available = ", ".join(fields.keys())
-        raise ValueError(f"No fields to update: pass at least one of {available}.")
+        raise ValueError(
+            f"No fields to update: pass at least one of {available}. "
+            "Note: passing None means 'omit', not 'clear' — the API ignores nulls."
+        )
 
     body = {"task": cleaned}
     data = await _get_client().request(method, f"tasks/{task_id}", json=body)
@@ -597,8 +600,8 @@ async def update_subtask(
         payload["assigned_user_id"] = assigned_user_id
     if not payload:
         raise ValueError(
-            "update_subtask called with no fields to update; "
-            "pass at least one of name / is_completed / assigned_user_id."
+            "No fields to update: pass at least one of name, is_completed, assigned_user_id. "
+            "Note: passing None means 'omit', not 'clear' — the API ignores nulls."
         )
     data = await _get_client().request("PATCH", f"subtasks/{subtask_id}", json=payload)
     return _decode(Subtask, data, label="subtask")
@@ -614,7 +617,9 @@ async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     server-side with a ``deleted_at`` timestamp and stops appearing on the
     parent task's ``subtasks`` array. This operation is not strictly
     irreversible from an audit perspective, but the MCP-visible effect is
-    "the subtask is gone."""
+    "the subtask is gone."
+
+    Raises ``KanbanToolHTTPError(404)`` if the subtask id is unknown."""
     data = await _get_client().request("DELETE", f"subtasks/{subtask_id}")
     return _decode(Subtask, data, label="subtask")
 
@@ -631,12 +636,19 @@ async def reorder_subtasks(
     desired order. Passing a partial set, or ids belonging to a different
     task, raises ``KanbanToolValidationError`` from the API."""
     if not ids:
-        raise ValueError("reorder_subtasks requires at least one subtask id.")
+        raise ValueError(
+            "reorder_subtasks requires at least one subtask id in `ids`. "
+            "Use list_subtasks(task_id) to discover the current ids, "
+            "then pass them in the desired order."
+        )
     if len(set(ids)) != len(ids):
         # The API would 422 on duplicate ids; refusing client-side mirrors
         # the empty-list ``ValueError`` and surfaces the intent ("did you
         # mean to repeat that id?") instead of a typed-validation round-trip.
-        raise ValueError(f"reorder_subtasks ``ids`` must be unique; got duplicates in {ids!r}.")
+        raise ValueError(
+            f"reorder_subtasks `ids` must be unique; got duplicates in {ids!r}. "
+            "Each subtask id should appear exactly once in the desired order."
+        )
     # Wire shape: ``PUT /subtasks/reorder.json`` takes ``{"task_id": int,
     # "ids": "comma,separated,string"}`` — the API expects a literal string
     # joined with commas, not a JSON array. Tool surface keeps the LLM-friendly
@@ -681,7 +693,10 @@ async def stop_timer(
 
     Wire shape: ``PUT /time_trackers/{id}.json`` with a flat
     ``{"ended_at": ...}`` body. Same flat-body convention as the
-    subtask endpoints — no ``{"time_tracker": {...}}`` envelope."""
+    subtask endpoints — no ``{"time_tracker": {...}}`` envelope.
+
+    Raises ``KanbanToolHTTPError(404)`` if the timer id is unknown or
+    belongs to another user."""
     if ended_at is None:
         # Default to "now" so the LLM doesn't have to thread datetime
         # values through every stop call. ISO format with millisecond
@@ -704,7 +719,10 @@ async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
 
     Returns ``None`` because the API responds with an empty body to
     ``DELETE /time_trackers/{id}.json``. The caller should treat the
-    timer id as invalidated after this call."""
+    timer id as invalidated after this call.
+
+    Raises ``KanbanToolHTTPError(404)`` if the timer id is unknown or
+    belongs to another user."""
     # The API returns ``204 No Content`` (or sometimes empty 200) — there
     # is no body to decode. Just propagate any HTTP error and otherwise
     # return None.
