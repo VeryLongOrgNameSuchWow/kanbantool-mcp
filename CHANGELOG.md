@@ -13,6 +13,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.2.0] - 2026-05-01
+
+Tool surface expansion plus a sweep through the error-handling story.
+
+### Added
+
+- **User-discovery tools** (#88) — three new MCP tools that close the
+  gap left by the API's lack of a bulk list-users endpoint:
+  - `whoami() -> User` — the authenticated user's profile, useful for
+    resolving "me" / "myself" in agent prompts to the right
+    `assigned_user_id`.
+  - `get_user(user_id) -> User` — by-id lookup for confirming role
+    flags and active state before assigning.
+  - `list_board_collaborators(board_id) -> list[Collaborator]` — thin
+    wrapper over `get_board` returning the inline `collaborators`
+    roster. The canonical user-discovery surface for assignment
+    workflows.
+- **`User` and `Collaborator` models** (#88) — surface the
+  LLM-meaningful subset of the wire shape; heavy nested fields
+  (`account`, `settings`, `customizations`, `groups`) dropped via
+  `extra="ignore"`.
+- **`Board.collaborators: list[Collaborator]`** (#88) — the inline
+  user roster on the detail payload; defaults to `[]` for compact
+  list-style payloads that omit it.
+- **Additive Task fields from the v3 wire payload** (#87) — surfaces
+  ~20 fields previously dropped via `extra="ignore"`:
+  - Sizing & estimation: `size_estimate`, `size_estimate_description`,
+    `time_estimate`.
+  - Visual markers: `card_color`, `card_color_in_rgb`,
+    `card_color_invert`, `card_type_id`.
+  - Scheduling: `recurring_schedule`, `reminders_schedule` (raw
+    dicts; typed wrappers can come when a tool needs them).
+  - Search: `search_tags` (list of strings — distinct from the
+    comma-separated `tags`).
+  - Relationships: `linked_tasks`, `linked_tasks_status`,
+    `task_dependencies`, `collaborators`, `attachments`,
+    `attachments_count` (collections; raw dicts inside).
+  - Provenance: `created_by_id`, `moved_at`, `postponed_until`,
+    `subtasks_completed_count`, `external_id`, `external_link`.
+- **Live integration coverage** for all the new tools and Task fields,
+  bringing the live suite from 5 → 10 tests against the test account.
+
+### Changed
+
+- **Typed error surface for response-decode failures** (#85) — every
+  read/write tool now wraps `pydantic.ValidationError` as
+  `KanbanToolHTTPError(status_code=200, body_excerpt="malformed X
+  payload: ...")` rather than leaking the raw pydantic exception to
+  MCP clients. The fix is centralised behind two private helpers
+  (`_decode` / `_decode_list`) and replaces 9 near-identical
+  try/except sites; the per-tool code is now a one-liner. This
+  makes every failure path go through the typed `KanbanToolError`
+  ladder consistently.
+- **Tool surface 12 → 15** with the new `whoami`, `get_user`,
+  `list_board_collaborators` (see Added).
+
+### Fixed
+
+- **Bearer-token leak surface in `body_excerpt`** (#85) — the new
+  decode helpers fold a `pydantic.ValidationError.__repr__` (which
+  embeds the offending input value) into the wrapped error's
+  `body_excerpt`. Without scrubbing, a 2xx response body containing a
+  `Bearer …` string (e.g. an upstream proxy / WAF echoing the
+  `Authorization` header) would land the token unredacted in the
+  excerpt. Centralised the scrub in `KanbanToolHTTPError.__init__`
+  so every constructor produces a scrubbed excerpt regardless of
+  caller; `client._scrub_secrets` continues to scrub upstream too,
+  and double-scrubbing is idempotent.
+- **Compact `Board` payloads with no `collaborators` key** (#88) —
+  the field defaults to `[]` rather than failing validation.
+
 ## [0.1.0] - 2026-05-01
 
 Initial release.
@@ -71,5 +142,6 @@ Initial release.
 - `Column.name` is nullable for the synthetic root stage that parents the
   real columns; consumers wanting only display columns filter by `parent_id`.
 
-[Unreleased]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/releases/tag/v0.1.0
