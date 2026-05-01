@@ -14,6 +14,10 @@ venv/
 .idea/
 .DS_Store
 
+# Claude Code session-local artifacts (agent worktrees, transcripts, etc.).
+# Cleaning up after a crashed agent shouldn't be a git operation.
+.claude/
+
 # secrets
 # Defense-in-depth: never commit credentials. Project rule is to keep
 # secrets out of the tree entirely; these patterns just stop the obvious
