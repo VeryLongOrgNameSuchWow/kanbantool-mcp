@@ -12,14 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * **release:** escape brackets in CHANGELOG-section awk regex ([#91](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/91)) ([2d5e695](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/2d5e695d78a3c6d15e4dcecb74db617a9959ee5a)), closes [#90](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/90)
 
-## [Unreleased]
-
-### Added
-
-### Changed
-
-### Fixed
-
 ## [0.2.0] - 2026-05-01
 
 Tool surface expansion plus a sweep through the error-handling story.
@@ -149,6 +141,5 @@ Initial release.
 - `Column.name` is nullable for the synthetic root stage that parents the
   real columns; consumers wanting only display columns filter by `parent_id`.
 
-[Unreleased]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/releases/tag/v0.1.0
