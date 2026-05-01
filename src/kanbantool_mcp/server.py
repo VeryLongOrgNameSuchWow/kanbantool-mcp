@@ -83,9 +83,12 @@ async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
 
 @mcp.tool
 async def get_task(task_id: int) -> Task:
-    """Fetch one task by id. Returns a Task with subtask/comment counts and total tracked time.
+    """Fetch one task by id. Returns a Task with subtask/comment counts,
+    total tracked time, and inline ``subtasks``.
 
-    Use ``list_subtasks`` to drill into nested collections.
+    Subtasks live on ``Task.subtasks`` directly — no extra round-trip needed
+    (use ``list_subtasks`` only when you want just the list and not the rest
+    of the task).
     Raises ``KanbanToolHTTPError(404)`` if the task is unknown or inaccessible."""
     data = await _get_client().request("GET", f"tasks/{task_id}")
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
@@ -372,12 +375,12 @@ async def add_comment(task_id: int, text: str) -> Comment:
 async def list_subtasks(task_id: int) -> list[Subtask]:
     """List subtasks on a task — id, name, completion state, position.
 
-    Returns an empty list when the task has none. Use ``get_task`` first if
-    you only need the subtask count rather than the full list."""
-    data = await _get_client().request("GET", f"tasks/{task_id}/subtasks")
-    raw = data.get("subtasks", []) if isinstance(data, dict) else []
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtasks payload").
-    return [Subtask.model_validate(s) for s in raw]
+    Subtasks are returned inline on ``Task.subtasks`` whenever you fetch a
+    task; this tool is sugar for callers that only want the list. Costs one
+    HTTP call (the same as ``get_task``) — the Kanban Tool API has no
+    dedicated list-subtasks endpoint."""
+    task = await get_task(task_id)
+    return task.subtasks
 
 
 @mcp.tool
@@ -386,8 +389,15 @@ async def add_subtask(task_id: int, title: str) -> Subtask:
 
     ``title`` is the human-readable label. Empty ``title`` typically raises
     ``KanbanToolValidationError`` from the API."""
-    body = {"subtask": {"name": title}}
-    data = await _get_client().request("POST", f"tasks/{task_id}/subtasks", json=body)
+    # Wire quirk: ``POST /subtasks.json`` takes a flat top-level body —
+    # ``{"name": ..., "task_id": ...}`` — NOT the Rails-style ``{"subtask": {...}}``
+    # envelope used by ``POST /tasks.json`` and friends. A spike against the
+    # live API confirmed that wrapping in an envelope makes the API drop the
+    # parent linkage (the response's ``task_id`` came back null and the
+    # subtask never appeared on the parent task). Don't copy ``create_task``'s
+    # shape here.
+    body = {"name": title, "task_id": task_id}
+    data = await _get_client().request("POST", "subtasks", json=body)
     # Trusting the bare-object response shape (mirrors get_task on main); no
     # defensive ``{"subtask": {...}}`` unwrap. M3 can revisit if the API ever
     # surprises us.

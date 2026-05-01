@@ -118,6 +118,11 @@ class Task(BaseModel):
     # returns — ``is_blocked`` is derived from "reason is set".
     block_reason: str | None = None
     subtasks_count: int | None = None
+    # Inline subtasks on the detail endpoint. Per the Kanban Tool API v3 docs
+    # there's no dedicated "list subtasks" endpoint — subtasks live on the
+    # parent task's detail payload. Empty default for the compact list shape
+    # (e.g. ``search_tasks`` results), where the API omits ``subtasks``.
+    subtasks: list[Subtask] = Field(default_factory=list)
     comments_count: int | None = None
     # Flat seconds. The wrapped ``{ "total": ..., "by_user": ... }`` shape is a
     # separate concern — exposed via a dedicated time-tracker tool later.
@@ -165,9 +170,11 @@ class Comment(BaseModel):
 class Subtask(BaseModel):
     """A subtask attached to a task.
 
-    Mirrors the GET/POST ``/tasks/{id}/subtasks.json`` payload. ``name`` is
-    the API-native field — kept verbatim rather than aliased to ``title`` so
-    there's no rename to maintain on either edge.
+    Surfaced inline on ``Task.subtasks`` whenever a task is fetched (the
+    Kanban Tool API v3 has no dedicated list-subtasks endpoint — see
+    https://kanbantool.com/developer/api-v3). ``POST /subtasks.json`` returns
+    the same shape. ``name`` is the API-native field — kept verbatim rather
+    than aliased to ``title`` so there's no rename to maintain on either edge.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -175,8 +182,12 @@ class Subtask(BaseModel):
     id: int
     name: str
     is_completed: bool | None = None
-    completed_at: str | None = None
     position: int | None = None
+    # Parent task id — surfaced on the wire after the create round-trip and
+    # useful for callers reasoning about a subtask in isolation.
+    task_id: int | None = None
+    # Single-assignee, mirroring ``Task.assigned_user_id``.
+    assigned_user_id: int | None = None
     # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtask payload").
 
 
