@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.2...v0.3.0) (2026-05-01)
+
+
+### Features
+
+* **server,models:** surface custom_field_1..15 (M4 [#103](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/103), option C) ([#105](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/105)) ([722da1b](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/722da1b26d2c94adaf8254c8b10706a6cdceb250))
+* **server:** subtask CRUD completion — update / delete / reorder ([#100](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/100)) ([d0a38b5](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/d0a38b5eef6d3491efcfef7389aa1b12522af7a8))
+
+
+### Documentation
+
+* link examples/04 from index + bump README tool count to 18 ([#102](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/102)) ([39559bd](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/39559bd5fad5dab525b6c0816d23b3ed9ca9508d))
+
 ## [0.2.2] - 2026-05-01
 
 Re-publish of v0.2.1 contents. v0.2.1 was tagged and a GitHub Release was
