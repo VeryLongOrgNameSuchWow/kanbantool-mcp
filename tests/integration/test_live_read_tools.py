@@ -19,11 +19,12 @@ any particular board name or id — see the ``populated_board_id`` fixture.
 from __future__ import annotations
 
 from kanbantool_mcp.client import KanbanToolClient
-from kanbantool_mcp.models import Board, ChangelogEntry, Task
+from kanbantool_mcp.models import Board, ChangelogEntry, Subtask, Task
 from kanbantool_mcp.server import (
     get_board,
     get_task,
     list_boards,
+    list_subtasks,
     recent_changes,
     search_tasks,
 )
@@ -116,3 +117,29 @@ async def test_recent_changes_populates_renamed_fields(
     assert first.user_id is None or isinstance(first.user_id, int)
     assert first.changed_object_type is None or isinstance(first.changed_object_type, str)
     assert first.description is None or isinstance(first.description, str)
+
+
+async def test_list_subtasks_and_inline_task_subtasks_agree(
+    _inject_live_client: KanbanToolClient, populated_board_id: int
+) -> None:
+    """The Kanban Tool API has no dedicated list-subtasks endpoint — subtasks
+    are inlined on ``GET /tasks/{id}.json``. Lock that contract: ``list_subtasks``
+    is sugar over ``get_task``, and both must surface the same shape.
+
+    Shape-not-value: we don't know if the picked task has subtasks (the welcome
+    board has none today), so we assert types and structural equivalence rather
+    than counts. This test would have caught the broken nested-endpoint path
+    pre-fix (the old code 404'd live)."""
+    search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
+    assert search_hits, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits[0].id
+
+    subtasks = await list_subtasks(task_id)
+    assert isinstance(subtasks, list)
+    assert all(isinstance(s, Subtask) for s in subtasks)
+
+    # Inline path: ``Task.subtasks`` from ``get_task`` should be the same list.
+    task = await get_task(task_id)
+    assert isinstance(task.subtasks, list)
+    assert all(isinstance(s, Subtask) for s in task.subtasks)
+    assert [s.id for s in subtasks] == [s.id for s in task.subtasks]

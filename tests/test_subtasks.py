@@ -14,42 +14,91 @@ from kanbantool_mcp.exceptions import (
     KanbanToolPermissionError,
     KanbanToolValidationError,
 )
-from kanbantool_mcp.server import add_subtask, list_subtasks
+from kanbantool_mcp.models import Subtask, Task
+from kanbantool_mcp.server import add_subtask, get_task, list_subtasks
 
 from .conftest import BASE_URL
 
 TASK_ID = 42
-SUBTASKS_URL = f"{BASE_URL}tasks/{TASK_ID}/subtasks.json"
+# ``list_subtasks`` rides on top of ``get_task`` because the Kanban Tool API has
+# no dedicated list-subtasks endpoint — subtasks are inlined on the task detail.
+TASK_URL = f"{BASE_URL}tasks/{TASK_ID}.json"
+# ``add_subtask`` POSTs to the top-level ``/subtasks.json`` collection (NOT
+# nested under ``tasks/{id}/...``); the parent linkage is in the body.
+SUBTASKS_URL = f"{BASE_URL}subtasks.json"
 
 
 def _request_body(route: respx.Route) -> dict[str, object]:
     return json.loads(route.calls.last.request.content)
 
 
+def _task_payload(subtasks: list[dict[str, object]]) -> dict[str, object]:
+    """Minimal ``GET /tasks/{id}.json`` shape with an inline ``subtasks`` array."""
+    return {"id": TASK_ID, "name": "parent task", "subtasks": subtasks}
+
+
 # ---------------------------------------------------------------------------
-# list_subtasks
+# Task.subtasks model round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_task_subtasks_round_trips() -> None:
+    """``Task.subtasks`` validates an inline list of ``Subtask`` objects and
+    defaults to an empty list when the wire payload omits the field (compact
+    list shape on ``search_tasks``)."""
+    full = Task.model_validate(
+        {
+            "id": 1,
+            "name": "parent",
+            "subtasks": [
+                {
+                    "id": 11,
+                    "name": "step",
+                    "is_completed": False,
+                    "position": 1,
+                    "task_id": 1,
+                    "assigned_user_id": 99,
+                }
+            ],
+        }
+    )
+    assert len(full.subtasks) == 1
+    sub = full.subtasks[0]
+    assert isinstance(sub, Subtask)
+    assert sub.id == 11
+    assert sub.name == "step"
+    assert sub.task_id == 1
+    assert sub.assigned_user_id == 99
+
+    bare = Task.model_validate({"id": 2, "name": "compact"})
+    assert bare.subtasks == []
+
+
+# ---------------------------------------------------------------------------
+# list_subtasks (sugar over get_task)
 # ---------------------------------------------------------------------------
 
 
 async def test_list_subtasks_happy_path(_inject_client: KanbanToolClient) -> None:
-    """A two-element ``subtasks`` array — one fully populated, one minimal —
-    should round-trip into the typed model with optional fields defaulting to
-    ``None`` on the minimal entry."""
-    payload = {
-        "subtasks": [
+    """A two-element inline ``subtasks`` array — one fully populated, one
+    minimal — should round-trip into the typed model with optional fields
+    defaulting to ``None`` on the minimal entry."""
+    payload = _task_payload(
+        [
             {
                 "id": 1,
                 "name": "Write spec",
                 "is_completed": True,
-                "completed_at": "2026-04-29T10:00:00Z",
                 "position": 1,
+                "task_id": TASK_ID,
+                "assigned_user_id": 7,
                 "extra_unknown_field": "ignored",
             },
             {"id": 2, "name": "Review PR"},
         ]
-    }
+    )
     with respx.mock(assert_all_called=True) as router:
-        router.get(SUBTASKS_URL).mock(return_value=httpx.Response(200, json=payload))
+        router.get(TASK_URL).mock(return_value=httpx.Response(200, json=payload))
         result = await list_subtasks(TASK_ID)
 
     assert len(result) == 2
@@ -57,52 +106,52 @@ async def test_list_subtasks_happy_path(_inject_client: KanbanToolClient) -> Non
     assert first.id == 1
     assert first.name == "Write spec"
     assert first.is_completed is True
-    assert first.completed_at == "2026-04-29T10:00:00Z"
     assert first.position == 1
+    assert first.task_id == TASK_ID
+    assert first.assigned_user_id == 7
 
     assert second.id == 2
     assert second.name == "Review PR"
     assert second.is_completed is None
-    assert second.completed_at is None
     assert second.position is None
+    assert second.task_id is None
+    assert second.assigned_user_id is None
 
 
 async def test_list_subtasks_empty(_inject_client: KanbanToolClient) -> None:
     with respx.mock(assert_all_called=True) as router:
-        router.get(SUBTASKS_URL).mock(return_value=httpx.Response(200, json={"subtasks": []}))
+        router.get(TASK_URL).mock(return_value=httpx.Response(200, json=_task_payload([])))
         result = await list_subtasks(TASK_ID)
 
     assert result == []
 
 
-async def test_list_subtasks_missing_key(_inject_client: KanbanToolClient) -> None:
-    """Defensive parse: a dict without a ``subtasks`` key returns ``[]`` rather
-    than raising — mirrors ``list_boards`` so an unfamiliar wire shape doesn't
-    blow up the tool."""
+async def test_list_subtasks_missing_field(_inject_client: KanbanToolClient) -> None:
+    """A task payload that omits the ``subtasks`` key entirely (e.g. a forward-compat
+    shape change) should yield ``[]`` via the ``Task.subtasks`` default."""
+    payload = {"id": TASK_ID, "name": "no subtasks key"}
     with respx.mock(assert_all_called=True) as router:
-        router.get(SUBTASKS_URL).mock(return_value=httpx.Response(200, json={"unrelated": "shape"}))
+        router.get(TASK_URL).mock(return_value=httpx.Response(200, json=payload))
         result = await list_subtasks(TASK_ID)
 
     assert result == []
 
 
 async def test_list_subtasks_url_shape(_inject_client: KanbanToolClient) -> None:
-    """GET hits ``tasks/{id}/subtasks.json`` exactly — no double-suffix, no
-    trailing slash, no query string."""
+    """GET hits ``tasks/{id}.json`` exactly — the route through ``get_task``
+    means we must NOT hit any nested ``/subtasks`` path (no such endpoint)."""
     with respx.mock(assert_all_called=True) as router:
-        route = router.get(SUBTASKS_URL).mock(
-            return_value=httpx.Response(200, json={"subtasks": []})
-        )
+        route = router.get(TASK_URL).mock(return_value=httpx.Response(200, json=_task_payload([])))
         await list_subtasks(TASK_ID)
 
     request = route.calls.last.request
     assert request.method == "GET"
-    assert str(request.url) == SUBTASKS_URL
+    assert str(request.url) == TASK_URL
 
 
 async def test_list_subtasks_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
     with respx.mock() as router:
-        router.get(SUBTASKS_URL).mock(return_value=httpx.Response(404, text="task not found"))
+        router.get(TASK_URL).mock(return_value=httpx.Response(404, text="task not found"))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
             await list_subtasks(TASK_ID)
     assert exc_info.value.status_code == 404
@@ -112,9 +161,22 @@ async def test_list_subtasks_401_raises_permission_error(
     _inject_client: KanbanToolClient,
 ) -> None:
     with respx.mock() as router:
-        router.get(SUBTASKS_URL).mock(return_value=httpx.Response(401, text="unauthorized"))
+        router.get(TASK_URL).mock(return_value=httpx.Response(401, text="unauthorized"))
         with pytest.raises(KanbanToolPermissionError):
             await list_subtasks(TASK_ID)
+
+
+async def test_get_task_surfaces_inline_subtasks(_inject_client: KanbanToolClient) -> None:
+    """Sanity check that ``get_task`` parses the inline ``subtasks`` array —
+    proves ``list_subtasks`` and ``Task.subtasks`` agree on the same wire path."""
+    payload = _task_payload([{"id": 5, "name": "inline"}])
+    with respx.mock(assert_all_called=True) as router:
+        router.get(TASK_URL).mock(return_value=httpx.Response(200, json=payload))
+        task = await get_task(TASK_ID)
+
+    assert len(task.subtasks) == 1
+    assert task.subtasks[0].id == 5
+    assert task.subtasks[0].name == "inline"
 
 
 # ---------------------------------------------------------------------------
@@ -123,13 +185,17 @@ async def test_list_subtasks_401_raises_permission_error(
 
 
 async def test_add_subtask_happy_path(_inject_client: KanbanToolClient) -> None:
-    """Body must be the ``{"subtask": {"name": ...}}`` Rails envelope; response
-    parses straight into a ``Subtask`` (no defensive unwrap)."""
+    """Body must be the FLAT top-level ``{"name": ..., "task_id": ...}`` —
+    NOT the Rails-style ``{"subtask": {...}}`` envelope used by ``tasks``
+    POSTs. The live spike confirmed that the envelope shape makes the API
+    drop the parent linkage."""
     response_payload = {
         "id": 17,
         "name": "Draft tests",
         "is_completed": False,
         "position": 3,
+        "task_id": TASK_ID,
+        "assigned_user_id": 99,
     }
     with respx.mock(assert_all_called=True) as router:
         route = router.post(SUBTASKS_URL).mock(
@@ -141,9 +207,27 @@ async def test_add_subtask_happy_path(_inject_client: KanbanToolClient) -> None:
     assert subtask.name == "Draft tests"
     assert subtask.is_completed is False
     assert subtask.position == 3
+    assert subtask.task_id == TASK_ID
+    assert subtask.assigned_user_id == 99
 
     body = _request_body(route)
-    assert body == {"subtask": {"name": "Draft tests"}}
+    assert body == {"name": "Draft tests", "task_id": TASK_ID}
+
+
+async def test_add_subtask_body_has_no_envelope(_inject_client: KanbanToolClient) -> None:
+    """Regression guard: the top-level ``subtask`` envelope key must NOT appear.
+    Live API silently ignores ``task_id`` if the body is wrapped, breaking the
+    parent linkage — see the wire-quirk note on ``add_subtask``."""
+    with respx.mock(assert_all_called=True) as router:
+        route = router.post(SUBTASKS_URL).mock(
+            return_value=httpx.Response(201, json={"id": 1, "name": "x", "task_id": TASK_ID})
+        )
+        await add_subtask(task_id=TASK_ID, title="x")
+
+    body = _request_body(route)
+    assert "subtask" not in body
+    assert body["name"] == "x"
+    assert body["task_id"] == TASK_ID
 
 
 async def test_add_subtask_minimal_response(_inject_client: KanbanToolClient) -> None:
@@ -158,8 +242,9 @@ async def test_add_subtask_minimal_response(_inject_client: KanbanToolClient) ->
     assert subtask.id == 1
     assert subtask.name == "x"
     assert subtask.is_completed is None
-    assert subtask.completed_at is None
     assert subtask.position is None
+    assert subtask.task_id is None
+    assert subtask.assigned_user_id is None
 
 
 async def test_add_subtask_422_raises_validation_error(
@@ -179,7 +264,8 @@ async def test_add_subtask_422_raises_validation_error(
 
 
 async def test_add_subtask_url_shape(_inject_client: KanbanToolClient) -> None:
-    """POST hits ``tasks/{id}/subtasks.json`` exactly."""
+    """POST hits the top-level ``subtasks.json`` collection — NOT
+    ``tasks/{id}/subtasks.json`` (no such endpoint)."""
     with respx.mock(assert_all_called=True) as router:
         route = router.post(SUBTASKS_URL).mock(
             return_value=httpx.Response(201, json={"id": 1, "name": "x"})
