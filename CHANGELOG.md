@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.3.0...v0.4.0) (2026-05-01)
+
+
+### Features
+
+* **server,models:** add time-tracker tools (M4 [#104](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/104)) ([#106](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/106)) ([a6921c8](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/a6921c815286ffe698c57084c883ee6084884f98))
+
 ## [0.3.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.2.2...v0.3.0) (2026-05-01)
 
 
