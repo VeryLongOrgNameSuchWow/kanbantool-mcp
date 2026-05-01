@@ -473,7 +473,11 @@ async def archive_task(task_id: int) -> Task:
 
 @mcp.tool
 @validate_call
-async def set_custom_field(task_id: int, slot: int, value: Any | None) -> Task:
+async def set_custom_field(
+    task_id: Annotated[int, Field(ge=1)],
+    slot: Annotated[int, Field(ge=1, le=15)],
+    value: str | int | float | bool | None,
+) -> Task:
     """Set or clear one of the 15 ``custom_field_*`` slots on a task.
 
     ``slot`` selects which numbered slot to write (1..15 inclusive — the
@@ -494,11 +498,6 @@ async def set_custom_field(task_id: int, slot: int, value: Any | None) -> Task:
     # has None-skip semantics ("omit, don't clear"); here ``None`` MUST land
     # on the wire as a literal ``null`` to clear the field. Build the body
     # inline.
-    if not 1 <= slot <= 15:
-        # ``validate_call`` accepts any int — explicit range guard mirrors
-        # the API surface (15 fixed slots) and avoids round-tripping a
-        # clearly-bogus slot number for a 422.
-        raise ValueError(f"slot must be between 1 and 15 inclusive; got {slot}.")
     body = {"task": {f"custom_field_{slot}": value}}
     data = await _get_client().request("PUT", f"tasks/{task_id}", json=body)
     return _decode(Task, data, label="task")
