@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.5.0...v0.6.0) (2026-05-01)
+
+
+### Features
+
+* **server,models:** add delete_comment, fix add_comment wire field (M5) ([#111](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/111)) ([e20ae04](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/e20ae0410dc5ae73252819e843e7970119d6c8ff))
+
+
+### Documentation
+
+* add SEMVER.md (versioning policy) ([#116](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/116)) ([bf8fe7a](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/bf8fe7ae3d5a12bb1de1ff6d3fb99570c502ac3a))
+* **releasing:** document GitHub App auth + break-glass procedures ([#113](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/113)) ([51cfb76](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/51cfb7634716e94301d216a2e56dbc90e9f4e951))
+
 ## [0.5.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.4.0...v0.5.0) (2026-05-01)
 
 
