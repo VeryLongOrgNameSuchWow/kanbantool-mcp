@@ -15,6 +15,7 @@ jobs:
     permissions:
       id-token: write
       contents: write
+      issues: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
@@ -31,3 +32,35 @@ jobs:
             dist/*.whl
             dist/*.tar.gz
             dist/*.publish.attestation
+      # Auto-close any issues referenced as ``Closes #N`` in the CHANGELOG
+      # section for the just-published version. Keeps the issue tracker
+      # honest without requiring a manual ``gh issue close`` after every
+      # tag. Silent on parse failures — the release is already shipped at
+      # this point; no need to fail the workflow if an issue ref is malformed.
+      - name: Close issues referenced in CHANGELOG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF#refs/tags/v}"
+          # Extract the section under ``## [VERSION] - YYYY-MM-DD`` up to the
+          # next ``## [`` heading.
+          awk -v ver="[$version]" '
+            $0 ~ "^## " ver { inside=1; next }
+            $0 ~ "^## \\[" { inside=0 }
+            inside { print }
+          ' CHANGELOG.md > /tmp/release-section.md
+          if [ ! -s /tmp/release-section.md ]; then
+            echo "::notice::No CHANGELOG section found for [$version]; skipping issue close."
+            exit 0
+          fi
+          grep -oiE 'closes #[0-9]+' /tmp/release-section.md \
+            | grep -oE '[0-9]+' | sort -u > /tmp/issue-ids.txt
+          if [ ! -s /tmp/issue-ids.txt ]; then
+            echo "::notice::No 'Closes #N' references in CHANGELOG section for [$version]."
+            exit 0
+          fi
+          while read -r n; do
+            gh issue close "$n" \
+              --comment "Closed by v${version}: https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${version}" \
+              || echo "::warning::Failed to close #$n (already closed, missing, or insufficient permissions)."
+          done < /tmp/issue-ids.txt
