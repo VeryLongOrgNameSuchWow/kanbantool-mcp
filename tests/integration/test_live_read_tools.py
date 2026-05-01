@@ -26,6 +26,7 @@ from kanbantool_mcp.models import (
     CustomFieldDefinition,
     Subtask,
     Task,
+    TimeTracker,
     User,
 )
 from kanbantool_mcp.server import (
@@ -35,6 +36,7 @@ from kanbantool_mcp.server import (
     list_board_collaborators,
     list_boards,
     list_custom_field_definitions,
+    list_my_timers,
     list_subtasks,
     recent_changes,
     search_tasks,
@@ -289,3 +291,26 @@ async def test_get_task_collects_custom_field_values(
     # the metadata test above), the dict should have all 15 keys present.
     assert isinstance(task.custom_fields, dict)
     assert set(task.custom_fields.keys()) == {f"custom_field_{i}" for i in range(1, 16)}
+
+
+async def test_list_my_timers_returns_typed_list(
+    _inject_live_client: KanbanToolClient,
+) -> None:
+    """Read-only live coverage for the time-tracker surface. Write tools
+    (start_timer/stop_timer/delete_timer) are unit-tested only — running
+    them in CI would create real timer artifacts on the test account
+    every run. The full create→stop→delete cycle was spike-verified
+    locally during implementation and is covered by the offline unit suite."""
+    timers = await list_my_timers()
+
+    assert isinstance(timers, list)
+    # The user might genuinely have zero timers right now (rynbou's account
+    # is mostly clean), so we don't assert a count. Type-only locks.
+    assert all(isinstance(t, TimeTracker) for t in timers)
+    for t in timers:
+        # Critical fields the model surfaces; the rest are optional.
+        assert t.id > 0
+        assert t.user_id is None or isinstance(t.user_id, int)
+        # ``is_running`` is the computed-field flag; should be Boolean,
+        # never None (derived from ``ended_at``).
+        assert isinstance(t.is_running, bool)

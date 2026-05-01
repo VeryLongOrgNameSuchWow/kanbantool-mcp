@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, TypeVar
 
 from fastmcp import FastMCP
@@ -19,6 +19,7 @@ from .models import (
     CustomFieldDefinition,
     Subtask,
     Task,
+    TimeTracker,
     User,
 )
 
@@ -584,6 +585,86 @@ async def reorder_subtasks(
     body = {"task_id": task_id, "ids": ",".join(str(i) for i in ids)}
     data = await _get_client().request("PUT", "subtasks/reorder", json=body)
     return _decode_list(Subtask, data, label="subtasks")
+
+
+@mcp.tool
+@validate_call
+async def start_timer(
+    task_id: Annotated[int, Field(ge=1)],
+    board_id: Annotated[int, Field(ge=1)],
+) -> TimeTracker:
+    """Start a new time tracker on a task for the authenticated user.
+
+    Returns the created ``TimeTracker``. Both ``task_id`` AND ``board_id``
+    are required by the API — passing only one returns 404. The new timer
+    starts in the running state (``ended_at`` is ``None``); call
+    ``stop_timer`` when work pauses or ends.
+
+    Note: timers are per-user — starting one creates a record for the
+    authenticated user only. Use ``whoami`` if you need to know whose
+    timer it is."""
+    body = {"board_id": board_id, "task_id": task_id}
+    data = await _get_client().request("POST", "time_trackers", json=body)
+    return _decode(TimeTracker, data, label="time tracker")
+
+
+@mcp.tool
+@validate_call
+async def stop_timer(
+    timer_id: Annotated[int, Field(ge=1)],
+    ended_at: str | None = None,
+) -> TimeTracker:
+    """Stop a running time tracker. Returns the stopped ``TimeTracker``.
+
+    ``ended_at`` is an ISO 8601 timestamp; defaults to the current UTC
+    time if not provided. Stopping an already-stopped timer is harmless —
+    the API just updates the ``ended_at`` to the new value.
+
+    Wire shape: ``PUT /time_trackers/{id}.json`` with a flat
+    ``{"ended_at": ...}`` body. Same flat-body convention as the
+    subtask endpoints — no ``{"time_tracker": {...}}`` envelope."""
+    if ended_at is None:
+        # Default to "now" so the LLM doesn't have to thread datetime
+        # values through every stop call. ISO format with millisecond
+        # precision + Z suffix matches what the API echoes on responses.
+        ended_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    data = await _get_client().request(
+        "PUT",
+        f"time_trackers/{timer_id}",
+        json={"ended_at": ended_at},
+    )
+    return _decode(TimeTracker, data, label="time tracker")
+
+
+@mcp.tool
+@validate_call
+async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
+    """Delete a time tracker entirely (e.g. cancel a mistakenly-started
+    one). Unlike subtasks, timer deletion is hard — the record is gone,
+    not soft-flagged.
+
+    Returns ``None`` because the API responds with an empty body to
+    ``DELETE /time_trackers/{id}.json``. The caller should treat the
+    timer id as invalidated after this call."""
+    # The API returns ``204 No Content`` (or sometimes empty 200) — there
+    # is no body to decode. Just propagate any HTTP error and otherwise
+    # return None.
+    await _get_client().request("DELETE", f"time_trackers/{timer_id}")
+
+
+@mcp.tool
+async def list_my_timers() -> list[TimeTracker]:
+    """List the authenticated user's time trackers across all tasks.
+
+    Returns one ``TimeTracker`` per active or finished timer the current
+    user owns; the wire data lives on the ``time_trackers`` field of the
+    ``/users/current.json`` response (no dedicated list endpoint).
+
+    Use ``Task.time_trackers`` instead when you only want one task's
+    timers across all users."""
+    data = await _get_client().request("GET", "users/current")
+    raw = data.get("time_trackers", []) if isinstance(data, dict) else []
+    return _decode_list(TimeTracker, raw, label="time trackers")
 
 
 def run() -> None:
