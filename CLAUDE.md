@@ -51,8 +51,9 @@ M4 — Completeness:
 - `delete_timer` — hard-delete a timer
 - `list_my_timers` — current user's time trackers across all tasks
 
-M5 — Custom-field writes:
+M5 — Custom-field writes & comment polish:
 - `set_custom_field` — set or clear one of the 15 `custom_field_N` slots on a task. `value=None` clears (sends literal `null` on the wire — does NOT route through `_patch_task` because that helper has None-skip "omit, don't clear" semantics).
+- `delete_comment` — soft-delete a comment on a task. Returns the deleted `Comment` with `deleted_at` populated; mirrors the `delete_subtask` shape. The Kanban Tool API has no edit endpoint for comments (verified via spike: PUT/PATCH/POST-with-`_method` overrides all 404), so "fixing" a comment means delete + re-post. While in here, also fixed a P0 wire-field bug in `add_comment` — the body field is `content`, not `text` (every pre-fix call 422'd `Content can't be blank`); the `Comment` model now declares `content: str` directly.
 
 ## Kanban Tool API quirks
 

@@ -281,15 +281,27 @@ class Task(BaseModel):
 class Comment(BaseModel):
     """A comment on a task. Mirrors the POST ``/tasks/{id}/comments.json``
     response. Field names follow the wire format directly — no aliasing —
-    since the API's keys are already pleasant Python identifiers."""
+    since the API's keys are already pleasant Python identifiers.
+
+    Wire-shape note: the comment body lives under ``content`` on the wire,
+    NOT ``text``. An earlier iteration of this model declared ``text`` and
+    the server sent ``{"comment": {"text": ...}}`` — both wrong; the live
+    API silently 422'd every call. Confirmed via spike against a real
+    account before the M5 fix landed."""
 
     model_config = ConfigDict(extra="ignore")
 
     id: int
-    text: str | None = None
+    # Always a string on live comments — the API enforces non-blank ``content``
+    # at create time, so the field never carries ``None`` on the wire.
+    content: str
     user_id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    # Soft-delete timestamp — populated on the response from
+    # ``DELETE /tasks/{task_id}/comments/{id}.json`` (the API never hard-deletes,
+    # so the record stays around with this set). ``None`` on every live comment.
+    deleted_at: str | None = None
 
 
 class Subtask(BaseModel):
