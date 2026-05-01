@@ -52,11 +52,15 @@ jobs:
         run: |
           version="${GITHUB_REF#refs/tags/v}"
           # Extract the section under ``## [VERSION] - YYYY-MM-DD`` up to the
-          # next ``## [`` heading.
-          awk -v ver="[$version]" '
-            $0 ~ "^## " ver { inside=1; next }
-            $0 ~ "^## \\[" { inside=0 }
-            inside { print }
+          # next ``## [`` heading. The brackets are escaped in awk source so
+          # the regex engine treats them as literals; passing ``[VERSION]``
+          # via a shell variable would be parsed as a character class (the
+          # v0.2.0 release shipped with the buggy form and silently produced
+          # an empty section).
+          awk -v version="$version" '
+            $0 ~ "^## \\[" version "\\]"  { inside=1; next }
+            /^## \[/                       { inside=0 }
+            inside                         { print }
           ' CHANGELOG.md > /tmp/release-section.md
           if [ ! -s /tmp/release-section.md ]; then
             echo "::notice::No CHANGELOG section found for [$version]; skipping issue close."
