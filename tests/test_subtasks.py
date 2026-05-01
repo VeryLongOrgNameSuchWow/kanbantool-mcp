@@ -398,7 +398,7 @@ async def test_update_subtask_no_fields_raises_value_error(
 ) -> None:
     """Calling ``update_subtask`` with no kwargs is a programmer error —
     nothing to send. Refuse before hitting the API."""
-    with pytest.raises(ValueError, match="no fields to update"):
+    with pytest.raises(ValueError, match="No fields to update"):
         await update_subtask(subtask_id=7)
 
 

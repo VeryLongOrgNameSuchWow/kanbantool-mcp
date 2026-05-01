@@ -73,12 +73,16 @@ def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
     if status == 401:
         raise KanbanToolPermissionError(
             "Kanban Tool API rejected the request as unauthorized (401). "
-            "Check that the KANBANTOOL_API_TOKEN env var is set to a valid token."
+            "Check that the KANBANTOOL_API_TOKEN env var is set to a valid, "
+            "non-expired token, and that KANBANTOOL_DOMAIN matches the account "
+            "that issued the token."
         )
     if status == 403:
         raise KanbanToolPermissionError(
             "Kanban Tool API denied the request as forbidden (403). "
-            "The token does not have permission for this resource."
+            "The token is valid but lacks permission for this resource. "
+            "Try list_boards or whoami to confirm what this token can see, "
+            "or ask an admin to grant access."
         )
     body_text = response.text
     body_excerpt = _scrub_secrets(body_text)[:_BODY_EXCERPT_LIMIT]
@@ -91,7 +95,11 @@ def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
         )
     generic_message = f"Kanban Tool API returned HTTP {status} for {method} {path}"
     if status == 404:
-        message = f"no such task/board (or you lack access). {generic_message}"
+        message = (
+            f"no such task/board (or you lack access). {generic_message}. "
+            "Try list_boards to discover ids you can see, or check the id "
+            "argument against a recent get_task / get_board response."
+        )
     elif status >= 500:
         message = f"Kanban Tool API is having issues; retry shortly. {generic_message}"
     else:
