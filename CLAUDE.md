@@ -51,6 +51,9 @@ M4 — Completeness:
 - `delete_timer` — hard-delete a timer
 - `list_my_timers` — current user's time trackers across all tasks
 
+M5 — Custom-field writes:
+- `set_custom_field` — set or clear one of the 15 `custom_field_N` slots on a task. `value=None` clears (sends literal `null` on the wire — does NOT route through `_patch_task` because that helper has None-skip "omit, don't clear" semantics).
+
 ## Kanban Tool API quirks
 
 - Per-account base URL: `https://{KANBANTOOL_DOMAIN}.kanbantool.com/api/v3/`. There is no global host.
