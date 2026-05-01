@@ -260,3 +260,16 @@ async def test_delete_comment_rejects_non_positive_ids(
         await delete_comment(task_id=0, comment_id=COMMENT_ID)
     with pytest.raises(ValidationError):
         await delete_comment(task_id=TASK_ID, comment_id=0)
+
+
+async def test_add_comment_rejects_non_positive_task_id(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """Same parity guard as ``delete_comment``: a 0/-N task_id from a
+    prompt-injected caller is rejected before any HTTP traffic."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        await add_comment(task_id=0, text="hi")
+    with pytest.raises(ValidationError):
+        await add_comment(task_id=-1, text="hi")

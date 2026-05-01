@@ -505,10 +505,13 @@ async def set_custom_field(task_id: int, slot: int, value: Any | None) -> Task:
 
 
 @mcp.tool
-async def add_comment(task_id: int, text: str) -> Comment:
+@validate_call
+async def add_comment(task_id: Annotated[int, Field(ge=1)], text: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
     content, author, and timestamps. Empty ``text`` typically raises
-    ``KanbanToolValidationError`` from the API."""
+    ``KanbanToolValidationError`` from the API; the field key in
+    ``field_errors`` is ``"content"``, not ``"text"`` (that's the wire field
+    name, not the Python parameter)."""
     # Wire quirk: the body field is ``content``, not ``text`` — sending
     # ``{"comment": {"text": ...}}`` makes the live API 422 with
     # ``Content can't be blank``. Confirmed via spike. The tool's caller-facing
