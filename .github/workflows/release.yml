@@ -5,11 +5,20 @@ on:
     tags: ["v*"]
   # Manual dispatch as the escape hatch when a tag was created via
   # ``GITHUB_TOKEN`` (e.g. by release-please-action), which by GitHub's
-  # anti-loop rule does NOT fire ``push: tags`` triggers. Dispatch with
-  # ``--ref v0.X.Y`` to build + publish for that tag. Long-term fix is to
-  # give release-please a PAT or GitHub App so its tag pushes count as
-  # user pushes.
+  # anti-loop rule does NOT fire ``push: tags`` triggers in other
+  # workflows. Run from the GitHub Actions UI or via:
+  #   gh workflow run release.yml --ref main -f tag=v0.X.Y
+  # The ``tag`` input is required because dispatching from a branch ref
+  # (rather than a tag) means the workflow has no implicit tag context;
+  # the input becomes the checkout target + the GitHub-Release tag name.
+  # Long-term fix is to give release-please-action a PAT or GitHub App
+  # so its tag pushes count as user pushes.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build + publish (e.g. v0.2.1). Required."
+        required: true
+        type: string
 
 jobs:
   release:
@@ -25,11 +34,22 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # On ``push: tags``, ``github.ref`` is the tag and the default
+          # checkout is fine. On ``workflow_dispatch``, ``github.ref`` is
+          # the branch we dispatched from (typically main) — pivot to the
+          # input ``tag`` so the build artifacts match the right version.
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
+          # On ``push: tags`` softprops resolves the tag from
+          # ``github.ref_name`` automatically. On ``workflow_dispatch``,
+          # ``github.ref_name`` is the branch we dispatched from, so we
+          # have to point softprops at the input tag explicitly.
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           # Release notes are owned by release-please (see release-please.yml
           # + release-please-config.json). It opens the release PR, builds the
           # CHANGELOG entry from conventional commits, and creates the GitHub
@@ -56,8 +76,13 @@ jobs:
       - name: Close issues referenced in CHANGELOG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ``GITHUB_REF`` only carries the tag for the ``push: tags`` path;
+          # under ``workflow_dispatch`` it's the dispatching branch ref. Use
+          # the same precedence as the checkout step so this works for both.
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
         run: |
-          version="${GITHUB_REF#refs/tags/v}"
+          version="${DISPATCH_TAG:-${GITHUB_REF#refs/tags/}}"
+          version="${version#v}"
           # Extract the section under ``## [VERSION] - YYYY-MM-DD`` up to the
           # next ``## [`` heading. The brackets are escaped in awk source so
           # the regex engine treats them as literals; passing ``[VERSION]``
