@@ -13,7 +13,7 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 
 ## Status
 
-**Alpha.** The 25-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
+**Alpha, approaching v1.0.** The 25-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades. See [SEMVER.md](SEMVER.md) for the v1.0 stability commitment (which surfaces are stable, which are not, deprecation policy).
 
 ## Install
 
@@ -147,9 +147,14 @@ uv run ty check
 
 Tests are offline-only and mock HTTP via `respx` — no Kanban Tool account needed to contribute.
 
-## Security
+## Documentation
 
-See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
+| File | What it covers |
+| --- | --- |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Local setup, conventional-commit rules, what a good PR looks like, how reviews work. |
+| [RELEASING.md](RELEASING.md) | Release flow end-to-end (conventional commits → release-please → PyPI), the GitHub App that auths release-please, and break-glass procedures for stuck release PRs. |
+| [SEMVER.md](SEMVER.md) | Compatibility commitment for v1.0+ — which surfaces are stable, which are unstable, deprecation policy. |
+| [SECURITY.md](SECURITY.md) | How to report security vulnerabilities (GitHub private security advisories). |
 
 ## License
 
