@@ -231,3 +231,128 @@ def test_task_model_json_schema_advertises_computed_flags() -> None:
     schema = Task.model_json_schema(mode="serialization")
     assert "is_archived" in schema["properties"]
     assert "is_blocked" in schema["properties"]
+
+
+# --- Additive fields surfaced from the v3 wire payload (#38 / #59) ----------
+#
+# These three tests lock the additive-field contract: every new field
+# round-trips when present, defaults to None / [] when absent, and the
+# explicitly-deferred fields (custom_field_*, changelogs) stay dropped via
+# ``extra="ignore"``.
+
+
+def test_task_round_trips_additive_fields() -> None:
+    """Every additive field surfaced in #38 / #59 must round-trip via
+    ``Task.model_validate(...).model_dump()``."""
+    payload = {
+        "id": 1,
+        "name": "Loaded",
+        # Sizing & estimation
+        "size_estimate": 5,
+        "size_estimate_description": "five points",
+        "time_estimate": 7200,
+        # Search / discoverability
+        "search_tags": ["alpha", "beta"],
+        # Visual markers
+        "card_color": "red",
+        "card_color_in_rgb": "#ff0000",
+        "card_color_invert": True,
+        "card_type_id": 9,
+        # Schedule fields (raw dicts)
+        "recurring_schedule": {"every": "week", "weekday": "mon"},
+        "reminders_schedule": {"offsets": [60, 1440]},
+        # Relationships
+        "linked_tasks": [{"id": 11, "name": "linked-a"}],
+        "linked_tasks_status": "blocked",
+        "task_dependencies": [{"id": 22, "type": "blocks"}],
+        "collaborators": [{"user_id": 33}, {"user_id": 44}],
+        # Attachments
+        "attachments": [{"id": 55, "filename": "spec.pdf"}],
+        "attachments_count": 1,
+        # Provenance & state
+        "created_by_id": 100,
+        "moved_at": "2026-04-30T09:00:00Z",
+        "postponed_until": "2026-05-10T00:00:00Z",
+        "subtasks_completed_count": 2,
+        "external_id": "JIRA-42",
+        "external_link": "https://example.test/JIRA-42",
+    }
+    task = Task.model_validate(payload)
+    dumped = task.model_dump()
+
+    for key, value in payload.items():
+        assert dumped[key] == value, f"{key} did not round-trip"
+
+
+def test_task_additive_fields_default_when_absent() -> None:
+    """A minimal payload defaults every new field — ``None`` for scalars,
+    empty list for collection fields."""
+    task = Task.model_validate({"id": 1, "name": "Bare"})
+
+    # Scalar defaults
+    assert task.size_estimate is None
+    assert task.size_estimate_description is None
+    assert task.time_estimate is None
+    assert task.card_color is None
+    assert task.card_color_in_rgb is None
+    assert task.card_color_invert is None
+    assert task.card_type_id is None
+    assert task.recurring_schedule is None
+    assert task.reminders_schedule is None
+    assert task.linked_tasks_status is None
+    assert task.attachments_count is None
+    assert task.created_by_id is None
+    assert task.moved_at is None
+    assert task.postponed_until is None
+    assert task.subtasks_completed_count is None
+    assert task.external_id is None
+    assert task.external_link is None
+
+    # Collection defaults
+    assert task.search_tags == []
+    assert task.linked_tasks == []
+    assert task.task_dependencies == []
+    assert task.collaborators == []
+    assert task.attachments == []
+
+
+def test_task_collection_fields_coerce_null_to_empty_list() -> None:
+    """The Kanban Tool v3 API serialises empty collections as JSON ``null``
+    for several detail-only fields (live spike confirmed for ``linked_tasks``).
+    The model must coerce ``None`` → ``[]`` so callers see a consistent
+    list-typed surface."""
+    task = Task.model_validate(
+        {
+            "id": 1,
+            "name": "Null collections",
+            "linked_tasks": None,
+            "task_dependencies": None,
+            "collaborators": None,
+            "attachments": None,
+            "search_tags": None,
+        }
+    )
+    assert task.linked_tasks == []
+    assert task.task_dependencies == []
+    assert task.collaborators == []
+    assert task.attachments == []
+    assert task.search_tags == []
+
+
+def test_task_still_drops_deferred_fields() -> None:
+    """``custom_field_*`` and ``changelogs`` are explicitly deferred — they
+    must remain dropped via ``extra="ignore"`` so the additive change stays
+    pure (no accidental surface for fields we haven't designed)."""
+    task = Task.model_validate(
+        {
+            "id": 1,
+            "name": "Deferred",
+            "custom_field_1": "should not surface",
+            "custom_field_15": "also dropped",
+            "changelogs": [{"id": 999, "what": "noisy"}],
+        }
+    )
+    dumped = task.model_dump()
+    assert "custom_field_1" not in dumped
+    assert "custom_field_15" not in dumped
+    assert "changelogs" not in dumped
