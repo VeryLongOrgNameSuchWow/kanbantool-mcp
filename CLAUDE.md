@@ -35,6 +35,9 @@ Write tools (M2):
 - `add_comment`
 - `add_subtask`
 - `list_subtasks`
+- `update_subtask`
+- `delete_subtask`
+- `reorder_subtasks`
 
 User discovery tools (post-M3):
 - `whoami` — current user (resolves "me" / "myself")

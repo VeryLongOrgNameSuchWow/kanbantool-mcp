@@ -276,6 +276,10 @@ class Subtask(BaseModel):
     task_id: int | None = None
     # Single-assignee, mirroring ``Task.assigned_user_id``.
     assigned_user_id: int | None = None
+    # Soft-delete timestamp — populated on the response from
+    # ``DELETE /subtasks/{id}.json`` (the API never hard-deletes, so the
+    # record stays around with this set). ``None`` on every live subtask.
+    deleted_at: str | None = None
 
 
 class ChangelogEntry(BaseModel):
