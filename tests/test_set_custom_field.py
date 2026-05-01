@@ -16,6 +16,7 @@ than routing through ``update_task``):
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -78,11 +79,15 @@ async def test_set_custom_field_none_clears_via_explicit_null(
     body = _request_body(route)
     assert body == {"task": {"custom_field_1": None}}
 
-    # The raw request bytes must contain literal ``null`` — defensive against
-    # any future serializer change that decides ``None`` should drop the key.
+    # The raw request bytes must contain literal ``"custom_field_1":null`` —
+    # defensive against any future serializer change that decides ``None``
+    # should drop the key. Substring is tighter than ``"null" in raw`` (which
+    # would silently match a payload like ``{"...": "nullable"}``). Note no
+    # space between the colon and ``null``: httpx's default JSON encoder uses
+    # the compact (separators=(",", ":")) form. If a future tweak switches to
+    # indented JSON this assertion will need ``": null"``.
     raw = route.calls.last.request.content.decode()
-    assert "null" in raw
-    assert "custom_field_1" in raw
+    assert '"custom_field_1":null' in raw
 
     # The response shows the cleared value carried back through
     # ``Task.custom_fields``.
@@ -95,9 +100,10 @@ async def test_set_custom_field_rejects_out_of_range_slot(
     _inject_client: KanbanToolClient,
     bad_slot: int,
 ) -> None:
-    """Slots outside 1..15 must raise ``ValueError`` *before* any HTTP call —
-    the API has exactly 15 fixed slots, and round-tripping a bogus number
-    just to get a 422 wastes quota."""
+    """Slots outside 1..15 must reject *before* any HTTP call — the API has
+    exactly 15 fixed slots, and round-tripping a bogus number just to get a
+    422 wastes quota. ``validate_call`` enforces ``Field(ge=1, le=15)`` so the
+    raised error is a ``pydantic.ValidationError`` (a ``ValueError`` subclass)."""
     sentinel = AsyncMock(
         side_effect=AssertionError("set_custom_field issued an HTTP call for an out-of-range slot")
     )
@@ -105,7 +111,30 @@ async def test_set_custom_field_rejects_out_of_range_slot(
 
     with pytest.raises(ValueError) as exc_info:
         await set_custom_field(task_id=TASK_ID, slot=bad_slot, value="anything")
-    assert "1 and 15" in str(exc_info.value)
+    assert "slot" in str(exc_info.value)
+    sentinel.assert_not_awaited()
+
+
+@pytest.mark.parametrize("bad_value", [{"key": "v"}, ["a", "b"], object()])
+async def test_set_custom_field_rejects_unsupported_value_type(
+    monkeypatch: pytest.MonkeyPatch,
+    _inject_client: KanbanToolClient,
+    bad_value: Any,
+) -> None:
+    """The narrowed ``value`` type (``str | int | float | bool | None``)
+    rejects dicts, lists, and arbitrary objects at the ``validate_call``
+    boundary — keeping the typed-error contract instead of letting an
+    untyped ``TypeError`` escape from ``json.dumps`` deep inside httpx.
+
+    ``bad_value`` is typed ``Any`` so the type checker does not flag the
+    intentionally-mistyped call below; the runtime is what we are exercising."""
+    sentinel = AsyncMock(
+        side_effect=AssertionError("set_custom_field accepted an unsupported value type")
+    )
+    monkeypatch.setattr(_inject_client, "request", sentinel)
+
+    with pytest.raises(ValueError):
+        await set_custom_field(task_id=TASK_ID, slot=1, value=bad_value)
     sentinel.assert_not_awaited()
 
 
