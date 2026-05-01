@@ -1,71 +1,125 @@
 # Releasing
 
 This file documents the cut-and-publish process for `kanbantool-mcp`.
-The flow is GitHub Flow + tag-driven publish: ship from `main`, tag a
-`v*` semver, the `Release` workflow does the rest.
+The flow is **conventional commits → release-please opens a release PR
+→ merge → auto-tag + auto-publish**. Tag-driven, mostly hands-off.
 
 ## TL;DR
 
 ```bash
-# On main, with everything you want in the release already merged.
-# 1. Open a release PR.
-git checkout -b release/vX.Y.Z
+# 1. Land your changes as conventional-commit PRs to main.
+#    Squash-merge titles must follow https://www.conventionalcommits.org/.
+#    Examples:
+#       feat: add list_users tool
+#       fix(server): handle 422 with no body
+#       docs(readme): tighten install snippet
+#       fix!: drop unsupported py3.10                  ← MAJOR bump
+#       chore: bump dependabot pin                    ← no release entry
 
-# 2. Bump the version. ONE place — pyproject.toml reads it dynamically.
-$EDITOR src/kanbantool_mcp/__init__.py    # __version__ = "X.Y.Z"
+# 2. release-please opens (or refreshes) a release PR titled
+#    "chore(main): release X.Y.Z". It bumps __version__ in
+#    src/kanbantool_mcp/__init__.py and prepends an entry to CHANGELOG.md
+#    derived from your conventional commits.
 
-# 3. Update CHANGELOG.md.
-$EDITOR CHANGELOG.md                      # move [Unreleased] entries
-                                          # under [X.Y.Z] - YYYY-MM-DD;
-                                          # reset [Unreleased] stubs.
+# 3. Review the release PR.
+#    - Are the version bump and CHANGELOG section right?
+#    - Edit CHANGELOG.md directly if you want to soften wording or
+#      reorganise sections; release-please respects manual edits and
+#      will not overwrite them on subsequent pushes.
 
-# 4. Smoke the build.
-rm -rf dist/ && uv build
-unzip -l dist/*.whl   # wheel should be src-only
-tar tzf dist/*.tar.gz # sdist must NOT contain CLAUDE.md, .env, etc.
+# 4. Merge the release PR (squash). release-please-action then:
+#    - tags the merge commit as vX.Y.Z;
+#    - creates a GitHub Release with the CHANGELOG body.
 
-# 5. PR + merge.
-git commit -am "release: prepare vX.Y.Z"
-gh pr create -t "release: prepare vX.Y.Z" -b "..."
-# … review, merge to main …
+# 5. The new tag fires release.yml, which:
+#    - builds wheel + sdist;
+#    - publishes to PyPI via OIDC trusted publishing;
+#    - attaches dist artifacts + sigstore attestations to the release;
+#    - closes any "Closes #N" issues mentioned in the new CHANGELOG section.
 
-# 6. Tag and push. The Release workflow takes it from here.
-git checkout main && git pull
-git tag vX.Y.Z -m "vX.Y.Z — <one-line summary>"
-git push origin vX.Y.Z
+# That's it. No manual ``git tag``, no manual ``gh release create``.
 ```
 
-After the workflow completes:
+## After the workflow completes
 
 ```bash
-# Verify and close associated issues.
+# Verify (optional — auto-close handles the rest).
 curl -s https://pypi.org/pypi/kanbantool-mcp/json | jq '.info.version'
 gh release view vX.Y.Z --repo VeryLongOrgNameSuchWow/kanbantool-mcp
-gh issue close <Closes-N issues from the changelog> --comment "Done in vX.Y.Z"
+```
+
+## Conventional commits — the contract
+
+release-please reads merge-commit titles on `main`. Pattern:
+
+```
+<type>[optional scope][!]: <description>
+
+[body]
+
+[footer(s) — e.g. "Closes #N", "BREAKING CHANGE: …"]
+```
+
+| `<type>` | Bumps | Appears in CHANGELOG under |
+|----------|-------|----------------------------|
+| `feat` | minor | `### Features` |
+| `fix` | patch | `### Bug Fixes` |
+| `perf` | patch | `### Performance Improvements` |
+| `refactor` | patch | `### Refactors` |
+| `docs` | patch | `### Documentation` |
+| `chore` | none | (omitted unless `!`) |
+| `ci` / `build` / `test` | none | (omitted unless `!`) |
+
+A `!` after the type or a `BREAKING CHANGE:` footer triggers a major bump
+(e.g. `feat!: drop py3.10` or `fix(server): swap error code\n\nBREAKING
+CHANGE: clients must handle KanbanToolValidationError now`).
+
+The `Closes #N` footer is honoured separately by `release.yml`'s
+auto-close step — see "Tag → publish flow" below.
+
+## Manual-cut escape hatch
+
+If something goes wrong and you need to cut without release-please
+(e.g. emergency hotfix, release-please service is down):
+
+```bash
+git checkout main && git pull
+$EDITOR src/kanbantool_mcp/__init__.py  # __version__ = "X.Y.Z"
+$EDITOR CHANGELOG.md                    # add "## [X.Y.Z] - YYYY-MM-DD"
+git commit -am "chore: release X.Y.Z"
+git push origin main
+git tag vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+# release.yml fires; release will be created without notes
+gh release edit vX.Y.Z --notes-file <(awk '/^## \[X.Y.Z\]/,/^## \[/' CHANGELOG.md)
 ```
 
 ## Pre-cut checklist
 
-The v0.1.0 cut surfaced a handful of things at the very last gate.
-Walk this checklist on the release PR — it's all stuff that's easy
-to forget when you're focused on the changelog:
+Walk this on the release PR (whether opened by release-please or
+hand-cut). The first two sections are normally green-by-construction
+when release-please opened the PR; the rest are maintainer
+responsibility because release-please can't see them.
 
-### Version
+### Version (release-please owns)
 
 - [ ] `src/kanbantool_mcp/__init__.py`'s `__version__` matches the
-  intended tag (no `.dev0`, no stale value).
-- [ ] `pyproject.toml` is unchanged for the version (it's `dynamic`).
+  intended tag — no `.dev`, no skipped semver step.
+- [ ] `pyproject.toml` is unchanged for the version (it's `dynamic`
+  via Hatchling).
+- [ ] `.release-please-manifest.json` matches the bumped version
+  (release-please updates this; don't hand-edit).
 
-### Changelog
+### Changelog (release-please owns)
 
-- [ ] `[Unreleased]` content moved under a new `[X.Y.Z] - YYYY-MM-DD`
-  heading with today's date — not `YYYY-MM-DD`.
-- [ ] `[Unreleased]` reset to empty `### Added` / `### Changed` /
-  `### Fixed` stubs.
-- [ ] Bottom-of-file link references updated (the `[Unreleased]: …`
-  and `[X.Y.Z]: …` URLs).
-- [ ] Every entry under `[X.Y.Z]` corresponds to something that
-  actually shipped.
+- [ ] The new `[X.Y.Z] - YYYY-MM-DD` section actually reflects what
+  shipped. release-please groups by conventional-commit type; if a
+  fix landed under `chore:` it won't show up — fix the commit history
+  before merging the release PR (or move the entry manually; the bot
+  honours manual edits).
+- [ ] `Closes #N` footers from the merged feature commits propagated
+  into the release-PR's CHANGELOG section. (release.yml's auto-close
+  step keys off these — see "Tag → publish flow".)
 
 ### README
 
@@ -122,9 +176,13 @@ The job:
    trusted-publisher endpoint (configured under the org's PyPI
    account) and uploads the artifacts. **No PyPI password ever
    leaves the workflow runner.**
-4. `softprops/action-gh-release` creates the GitHub release with
-   auto-generated notes and attaches the wheel, sdist, and sigstore
-   `*.publish.attestation` files.
+4. `softprops/action-gh-release` attaches the wheel, sdist, and
+   sigstore `*.publish.attestation` files to the GitHub release that
+   release-please-action created when the release PR merged.
+5. A final shell step parses the new `[X.Y.Z]` section of
+   `CHANGELOG.md` for `Closes #N` footers and runs
+   `gh issue close $N` for each — keeping the issue tracker honest
+   without a manual sweep.
 
 If the workflow fails partway through (e.g. PyPI 5xx), the tag is
 already on the remote and you have to resolve manually — see
