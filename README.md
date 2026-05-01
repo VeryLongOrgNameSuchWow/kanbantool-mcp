@@ -13,7 +13,7 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 
 ## Status
 
-**Alpha.** The 24-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
+**Alpha.** The 25-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
 
 ## Install
 
@@ -80,6 +80,7 @@ Add to your MCP client's `mcp.json`:
 | `move_task` | Move a task between columns, swimlanes, or positions. At least one target must be set. | `task_id`, `column_id?`, `swimlane_id?`, `position?` |
 | `archive_task` | Archive a task. Idempotent. | `task_id` |
 | `add_comment` | Post a comment on a task. | `task_id`, `text` |
+| `delete_comment` | Soft-delete a comment on a task. Returns the deleted comment with `deleted_at` populated. The API has no edit endpoint — delete and re-post if you need to change a comment. | `task_id`, `comment_id` |
 | `list_subtasks` | List subtasks attached to a task. | `task_id` |
 | `add_subtask` | Add a subtask to a task. | `task_id`, `title` |
 | `update_subtask` | Partial update of an existing subtask — mark complete, rename, change assignee. `None` kwargs are omitted. | `subtask_id`, `name?`, `is_completed?`, `assigned_user_id?` |

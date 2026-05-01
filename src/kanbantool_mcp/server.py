@@ -505,12 +505,39 @@ async def set_custom_field(task_id: int, slot: int, value: Any | None) -> Task:
 
 
 @mcp.tool
-async def add_comment(task_id: int, text: str) -> Comment:
+@validate_call
+async def add_comment(task_id: Annotated[int, Field(ge=1)], text: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
-    text, author, and timestamps. Empty ``text`` typically raises
-    ``KanbanToolValidationError`` from the API."""
-    body = {"comment": {"text": text}}
+    content, author, and timestamps. Empty ``text`` typically raises
+    ``KanbanToolValidationError`` from the API; the field key in
+    ``field_errors`` is ``"content"``, not ``"text"`` (that's the wire field
+    name, not the Python parameter)."""
+    # Wire quirk: the body field is ``content``, not ``text`` — sending
+    # ``{"comment": {"text": ...}}`` makes the live API 422 with
+    # ``Content can't be blank``. Confirmed via spike. The tool's caller-facing
+    # ``text`` parameter stays unchanged for ergonomics; the rename is internal.
+    body = {"comment": {"content": text}}
     data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
+    return _decode(Comment, data, label="comment")
+
+
+@mcp.tool
+@validate_call
+async def delete_comment(
+    task_id: Annotated[int, Field(ge=1)],
+    comment_id: Annotated[int, Field(ge=1)],
+) -> Comment:
+    """Delete a comment (soft-delete). Returns the deleted ``Comment`` with
+    ``deleted_at`` populated.
+
+    Like subtasks, the Kanban Tool API soft-deletes — the comment record is
+    retained server-side with a ``deleted_at`` timestamp and stops appearing
+    on the parent task's comments. The MCP-visible effect is "the comment is
+    gone." There is no edit endpoint on the API; if you need to "fix" a
+    comment, delete it and post a replacement.
+
+    Raises ``KanbanToolHTTPError(404)`` if either id is unknown."""
+    data = await _get_client().request("DELETE", f"tasks/{task_id}/comments/{comment_id}")
     return _decode(Comment, data, label="comment")
 
 
