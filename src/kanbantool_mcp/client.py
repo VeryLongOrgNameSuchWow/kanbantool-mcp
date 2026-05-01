@@ -124,8 +124,13 @@ class KanbanToolClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+    async def request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Send an HTTP request to the Kanban Tool API and return the parsed JSON response.
+
+        Return type is ``Any`` because the Kanban Tool API surfaces both
+        envelope-shaped dicts (``GET /tasks/search.json`` → ``{"results": [...]}``)
+        and bare lists (``GET /boards/{id}/changelog.json`` → ``[...]``). Callers
+        narrow via ``model_validate`` on the items they actually expect.
 
         Pass query parameters via the `params=` keyword, not embedded in `path` —
         the `.json` suffix logic doesn't account for query strings. Authorization
