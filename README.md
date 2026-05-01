@@ -82,6 +82,9 @@ Add to your MCP client's `mcp.json`:
 | `add_comment` | Post a comment on a task. | `task_id`, `text` |
 | `list_subtasks` | List subtasks attached to a task. | `task_id` |
 | `add_subtask` | Add a subtask to a task. | `task_id`, `title` |
+| `update_subtask` | Partial update of an existing subtask — mark complete, rename, change assignee. `None` kwargs are omitted. | `subtask_id`, `name?`, `is_completed?`, `assigned_user_id?` |
+| `delete_subtask` | Soft-delete a subtask. Returns the deleted subtask with `deleted_at` populated. | `subtask_id` |
+| `reorder_subtasks` | Reorder all subtasks under a task. `ids` must include the full set in the desired order. | `task_id`, `ids: list[int]` |
 | `whoami` | Fetch the authenticated user's profile — id, role flags, locale. Use to resolve "me" / "myself" in user requests. | — |
 | `get_user` | Fetch one user by id. | `user_id` |
 | `list_board_collaborators` | List users with access to a board (the canonical user-discovery surface — the API has no bulk list-users endpoint). | `board_id` |

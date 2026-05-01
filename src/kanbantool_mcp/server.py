@@ -454,10 +454,78 @@ async def add_subtask(task_id: int, title: str) -> Subtask:
     # shape here.
     body = {"name": title, "task_id": task_id}
     data = await _get_client().request("POST", "subtasks", json=body)
-    # Trusting the bare-object response shape (mirrors get_task on main); no
-    # defensive ``{"subtask": {...}}`` unwrap. M3 can revisit if the API ever
-    # surprises us.
     return _decode(Subtask, data, label="subtask")
+
+
+@mcp.tool
+@validate_call
+async def update_subtask(
+    subtask_id: Annotated[int, Field(ge=1)],
+    *,
+    name: str | None = None,
+    is_completed: bool | None = None,
+    assigned_user_id: int | None = None,
+) -> Subtask:
+    """Partial update of an existing subtask. Returns the updated ``Subtask``.
+
+    Only kwargs the caller passes are sent — ``None`` means *omit*, not
+    *clear*. Use this to mark complete (``is_completed=True``), rename
+    (``name="..."``), or change the assignee (``assigned_user_id=42``).
+    The ``position`` field is read-only on this endpoint; use
+    ``reorder_subtasks`` to change ordering."""
+    # Same flat-body convention as ``add_subtask`` — ``PATCH /subtasks/{id}.json``
+    # does NOT take a ``{"subtask": {...}}`` envelope. Confirmed via live spike.
+    payload: dict[str, Any] = {}
+    if name is not None:
+        payload["name"] = name
+    if is_completed is not None:
+        payload["is_completed"] = is_completed
+    if assigned_user_id is not None:
+        payload["assigned_user_id"] = assigned_user_id
+    if not payload:
+        raise ValueError(
+            "update_subtask called with no fields to update; "
+            "pass at least one of name / is_completed / assigned_user_id."
+        )
+    data = await _get_client().request("PATCH", f"subtasks/{subtask_id}", json=payload)
+    return _decode(Subtask, data, label="subtask")
+
+
+@mcp.tool
+@validate_call
+async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
+    """Delete a subtask (soft-delete). Returns the deleted ``Subtask`` with
+    ``deleted_at`` populated.
+
+    The Kanban Tool API soft-deletes — the subtask record is retained
+    server-side with a ``deleted_at`` timestamp and stops appearing on the
+    parent task's ``subtasks`` array. This operation is not strictly
+    irreversible from an audit perspective, but the MCP-visible effect is
+    "the subtask is gone."""
+    data = await _get_client().request("DELETE", f"subtasks/{subtask_id}")
+    return _decode(Subtask, data, label="subtask")
+
+
+@mcp.tool
+@validate_call
+async def reorder_subtasks(
+    task_id: Annotated[int, Field(ge=1)],
+    ids: list[int],
+) -> list[Subtask]:
+    """Reorder subtasks under a task. Returns the subtasks in the new order.
+
+    ``ids`` must be the full set of subtask ids on ``task_id`` in the
+    desired order. Passing a partial set, or ids belonging to a different
+    task, raises ``KanbanToolValidationError`` from the API."""
+    if not ids:
+        raise ValueError("reorder_subtasks requires at least one subtask id.")
+    # Wire shape: ``PUT /subtasks/reorder.json`` takes ``{"task_id": int,
+    # "ids": "comma,separated,string"}`` — the API expects a literal string
+    # joined with commas, not a JSON array. Tool surface keeps the LLM-friendly
+    # ``list[int]`` and joins on the way out.
+    body = {"task_id": task_id, "ids": ",".join(str(i) for i in ids)}
+    data = await _get_client().request("PUT", "subtasks/reorder", json=body)
+    return _decode_list(Subtask, data, label="subtasks")
 
 
 def run() -> None:
