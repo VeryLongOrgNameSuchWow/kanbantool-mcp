@@ -1,0 +1,62 @@
+name: Release dry-run
+
+# Catches packaging breakage (Hatchling config, classifiers, sdist exclude
+# list, dynamic version, install entry point) before a tag push fires the
+# real Release workflow. The Release workflow itself only runs on tag push,
+# so it cannot validate its own changes via PR CI — this is the gate.
+#
+# Runs on PRs touching anything that shapes the build artifacts.
+on:
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - src/kanbantool_mcp/__init__.py
+      - .github/workflows/release.yml
+      - .github/workflows/release-dry-run.yml
+      - CHANGELOG.md
+      - README.md
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv build
+      # The wheel must be src-only — no contributor docs, tests, or CI
+      # config. Catches Hatchling include/exclude regressions.
+      - name: Verify wheel is src-only
+        run: |
+          unzip -l dist/*.whl
+          if unzip -l dist/*.whl | grep -E '(^|/)(CLAUDE|RELEASING)\.md|tests/|\.github/|examples/'; then
+            echo "::error::Wheel contains files it should not"
+            exit 1
+          fi
+      # The sdist may include contributor docs (RELEASING.md, README,
+      # CHANGELOG) — that's normal — but ``CLAUDE.md`` is internal Claude
+      # Code orientation and is explicitly excluded via
+      # ``[tool.hatch.build.targets.sdist] exclude``. v0.1.0 shipped before
+      # that exclude existed; never again.
+      - name: Verify sdist excludes CLAUDE.md
+        run: |
+          tar tzf dist/*.tar.gz
+          if tar tzf dist/*.tar.gz | grep -E '(^|/)CLAUDE\.md$'; then
+            echo "::error::sdist contains CLAUDE.md (should be excluded)"
+            exit 1
+          fi
+      # The wheel imports cleanly into a fresh venv and the console-script
+      # entry point lands on PATH. Catches dynamic-version misconfig,
+      # missing __init__.py, broken [project.scripts] entries.
+      - name: Smoke-test installable wheel
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install dist/*.whl
+          /tmp/smoke/bin/python -c "import kanbantool_mcp; print('imported version', kanbantool_mcp.__version__)"
+          test -x /tmp/smoke/bin/kanbantool-mcp
