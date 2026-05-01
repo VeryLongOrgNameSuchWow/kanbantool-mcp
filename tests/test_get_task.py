@@ -119,6 +119,48 @@ async def test_get_task_401_raises_permission_error(_inject_client: KanbanToolCl
             await get_task(1)
 
 
+async def test_get_task_malformed_payload_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 200 with a payload missing required fields surfaces as
+    ``KanbanToolHTTPError(status_code=200)`` with a ``malformed``-tagged
+    excerpt — never a raw ``pydantic.ValidationError``."""
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_task_url(1)).mock(
+            return_value=httpx.Response(200, json={"name": "no-id"}),
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await get_task(1)
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
+async def test_get_task_malformed_payload_scrubs_bearer_token(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """Defends against an upstream proxy / WAF echoing the ``Authorization``
+    header back into a 2xx body. The malformed-payload path interpolates the
+    pydantic ``ValidationError.__repr__`` (which includes the offending input
+    value) into ``body_excerpt`` — that excerpt MUST NOT carry the raw token.
+    Centralised in ``KanbanToolHTTPError.__init__`` so every constructor of
+    the exception gets the scrub regardless of caller."""
+    leaked = "Bearer eyJhbG.real-secret-tok-leak.payload"
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_task_url(1)).mock(
+            # ``id`` is missing → ValidationError → wrap. The bearer string
+            # appears in the input dict, so it lands in the exception repr.
+            return_value=httpx.Response(200, json={"name": leaked}),
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await get_task(1)
+
+    excerpt = exc_info.value.body_excerpt
+    assert "real-secret-tok-leak" not in excerpt
+    assert "eyJhbG" not in excerpt
+    assert "Bearer ***" in excerpt
+
+
 async def test_get_task_url_shape(_inject_client: KanbanToolClient) -> None:
     """Verify the tool hits exactly ``GET tasks/{id}.json`` (no query string,
     no double-suffix, correct base URL)."""

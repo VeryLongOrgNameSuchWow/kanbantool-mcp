@@ -129,6 +129,23 @@ async def test_get_board_404_raises_http_error(_inject_client: KanbanToolClient)
         assert "not found" in exc_info.value.body_excerpt
 
 
+async def test_get_board_malformed_payload_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 200 with a payload missing the required ``id`` field surfaces as
+    ``KanbanToolHTTPError(status_code=200)`` with a ``malformed``-tagged
+    excerpt — never a raw ``pydantic.ValidationError``."""
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_board_url(7)).mock(
+            return_value=httpx.Response(200, json={"name": "no-id"}),
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await get_board(7)
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
 def test_column_serializes_type_alias_not_underscore() -> None:
     """A JSON dump of a Column uses key ``type``, not ``type_``."""
     column = Column.model_validate(

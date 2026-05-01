@@ -112,6 +112,25 @@ async def test_recent_changes_401_raises_permission_error(
             await recent_changes(42)
 
 
+async def test_recent_changes_malformed_entry_raises_http_error(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 200 with a changelog entry missing the required ``id`` field surfaces
+    as ``KanbanToolHTTPError(status_code=200)`` with a ``malformed``-tagged
+    excerpt — never a raw ``pydantic.ValidationError``."""
+    payload = [
+        {"id": 1, "created_at": "2026-04-30T10:00:00Z"},
+        {"created_at": "2026-04-30T09:00:00Z"},  # missing id
+    ]
+    with respx.mock(assert_all_called=True) as router:
+        router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=payload))
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await recent_changes(42)
+
+    assert exc_info.value.status_code == 200
+    assert "malformed" in exc_info.value.body_excerpt
+
+
 async def test_recent_changes_via_fastmcp_entrypoint_accepts_iso_string(
     _inject_client: KanbanToolClient,
 ) -> None:

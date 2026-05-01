@@ -188,7 +188,6 @@ class Subtask(BaseModel):
     task_id: int | None = None
     # Single-assignee, mirroring ``Task.assigned_user_id``.
     assigned_user_id: int | None = None
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtask payload").
 
 
 class ChangelogEntry(BaseModel):
