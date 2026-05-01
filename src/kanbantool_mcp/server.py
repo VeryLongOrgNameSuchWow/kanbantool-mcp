@@ -472,6 +472,39 @@ async def archive_task(task_id: int) -> Task:
 
 
 @mcp.tool
+@validate_call
+async def set_custom_field(task_id: int, slot: int, value: Any | None) -> Task:
+    """Set or clear one of the 15 ``custom_field_*`` slots on a task.
+
+    ``slot`` selects which numbered slot to write (1..15 inclusive — the
+    Kanban Tool API exposes exactly 15). Pair with
+    ``list_custom_field_definitions(board_id)`` to learn each slot's label
+    and type on a given board before writing.
+
+    ``value`` is sent verbatim — strings, numbers, and booleans all work.
+    Pass ``value=None`` to **clear** the slot: the wire body explicitly sends
+    ``null`` (not omits the key), and a subsequent ``get_task`` will see
+    ``custom_field_N: null``. This differs from ``update_task`` semantics
+    where ``None`` means *omit*; for custom fields ``None`` means *clear*.
+
+    Type mismatches (e.g. writing ``"hi"`` into a numeric slot) surface as
+    ``KanbanToolValidationError`` (422) from the API, with parsed
+    ``field_errors`` populated."""
+    # NOTE: Deliberately does NOT route through ``_patch_task``. That helper
+    # has None-skip semantics ("omit, don't clear"); here ``None`` MUST land
+    # on the wire as a literal ``null`` to clear the field. Build the body
+    # inline.
+    if not 1 <= slot <= 15:
+        # ``validate_call`` accepts any int — explicit range guard mirrors
+        # the API surface (15 fixed slots) and avoids round-tripping a
+        # clearly-bogus slot number for a 422.
+        raise ValueError(f"slot must be between 1 and 15 inclusive; got {slot}.")
+    body = {"task": {f"custom_field_{slot}": value}}
+    data = await _get_client().request("PUT", f"tasks/{task_id}", json=body)
+    return _decode(Task, data, label="task")
+
+
+@mcp.tool
 async def add_comment(task_id: int, text: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
     text, author, and timestamps. Empty ``text`` typically raises
