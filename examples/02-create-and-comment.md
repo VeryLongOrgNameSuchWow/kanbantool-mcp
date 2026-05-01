@@ -58,9 +58,10 @@ annotated with reproduction steps. The assistant resolves the board, calls
 ```json
 {
   "id": 88102,
-  "text": "Steps to reproduce:\n1. Log out.\n2. Visit /login on Safari 17.\n3. Submit valid creds — page reloads with no session cookie set.\nExpected: redirect to /dashboard.",
+  "content": "Steps to reproduce:\n1. Log out.\n2. Visit /login on Safari 17.\n3. Submit valid creds — page reloads with no session cookie set.\nExpected: redirect to /dashboard.",
   "user_id": 12,
-  "created_at": "2026-04-30T11:14:09Z"
+  "created_at": "2026-04-30T11:14:09Z",
+  "deleted_at": null
 }
 ```
 
