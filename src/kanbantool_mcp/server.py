@@ -258,8 +258,10 @@ async def create_task(
     if tags is not None:
         payload["tags"] = tags
 
-    # M3: confirm against a real account that POST /tasks.json expects the
-    # ``{"task": {...}}`` Rails-style envelope (vs. flat top-level fields).
+    # ``tasks/`` endpoints take a Rails-style envelope: ``{"task": {...}}``.
+    # Confirmed via the #62 live-API spike — flat top-level fields are
+    # silently ignored. (Note: this convention does NOT carry over to
+    # subtasks; ``POST /subtasks.json`` is flat per ``add_subtask``.)
     body = {"task": payload}
     data = await _get_client().request("POST", "tasks", json=body)
     return _decode(Task, data, label="task")
