@@ -158,8 +158,10 @@ async def test_set_custom_field_422_raises_validation_error(
 async def test_set_custom_field_accepts_non_string_values(
     _inject_client: KanbanToolClient,
 ) -> None:
-    """The signature is ``Any | None``; ints, floats, and bools must all be
-    forwarded verbatim into the wire body without coercion."""
+    """The signature accepts ``str | int | float | bool | None``; ints, floats,
+    and bools must all be forwarded verbatim into the wire body without
+    coercion. (Sister test ``test_set_custom_field_rejects_unsupported_value_type``
+    proves the union's *exclusion* side.)"""
     response_payload = {
         "id": TASK_ID,
         "name": "n",
