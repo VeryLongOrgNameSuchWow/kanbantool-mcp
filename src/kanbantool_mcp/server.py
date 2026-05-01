@@ -618,6 +618,7 @@ async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     parent task's ``subtasks`` array. This operation is not strictly
     irreversible from an audit perspective, but the MCP-visible effect is
     "the subtask is gone."
+
     Raises ``KanbanToolHTTPError(404)`` if the subtask id is unknown."""
     data = await _get_client().request("DELETE", f"subtasks/{subtask_id}")
     return _decode(Subtask, data, label="subtask")
@@ -693,6 +694,7 @@ async def stop_timer(
     Wire shape: ``PUT /time_trackers/{id}.json`` with a flat
     ``{"ended_at": ...}`` body. Same flat-body convention as the
     subtask endpoints — no ``{"time_tracker": {...}}`` envelope.
+
     Raises ``KanbanToolHTTPError(404)`` if the timer id is unknown or
     belongs to another user."""
     if ended_at is None:
@@ -718,6 +720,7 @@ async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
     Returns ``None`` because the API responds with an empty body to
     ``DELETE /time_trackers/{id}.json``. The caller should treat the
     timer id as invalidated after this call.
+
     Raises ``KanbanToolHTTPError(404)`` if the timer id is unknown or
     belongs to another user."""
     # The API returns ``204 No Content`` (or sometimes empty 200) — there
