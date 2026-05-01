@@ -21,7 +21,15 @@ class KanbanToolHTTPError(KanbanToolError):
     def __init__(self, message: str, *, status_code: int, body_excerpt: str) -> None:
         super().__init__(message)
         self.status_code = status_code
-        self.body_excerpt = body_excerpt
+        # Centralised secret scrub. Callers in ``client.py`` already scrub on
+        # the way in for 4xx/5xx; the new ``server._decode`` / ``_decode_list``
+        # helpers fold a ``ValidationError.__repr__`` (which embeds the input
+        # value) into the excerpt without going through ``client._scrub_secrets``.
+        # Doing the scrub here closes that gap and makes the exception
+        # constructor authoritative — every code path that builds a
+        # ``KanbanToolHTTPError`` ends up with a scrubbed excerpt regardless
+        # of whether the caller remembered.
+        self.body_excerpt = _BEARER_PATTERN.sub("Bearer ***", body_excerpt)
 
 
 class KanbanToolValidationError(KanbanToolHTTPError):
