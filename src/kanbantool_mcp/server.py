@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 from fastmcp import FastMCP
-from pydantic import Field, ValidationError, validate_call
+from pydantic import BaseModel, Field, ValidationError, validate_call
 
 from .client import KanbanToolClient
 from .config import Config
@@ -20,6 +20,42 @@ from .models import Board, ChangelogEntry, Comment, Subtask, Task
 _PAYLOAD_EXCERPT_LIMIT = 200
 
 mcp: FastMCP = FastMCP("kanbantool-mcp")
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def _decode(model: type[_ModelT], data: Any, *, label: str) -> _ModelT:
+    """Validate ``data`` as ``model`` or raise ``KanbanToolHTTPError``.
+
+    The HTTP call has already succeeded (200), but the body's shape doesn't
+    match what we expect. Wrapping the raw ``pydantic.ValidationError`` keeps
+    the error surface consistent with 4xx/5xx flows — callers always see a
+    typed ``KanbanToolError``, never a pydantic exception leaking through.
+    """
+    try:
+        return model.model_validate(data)
+    except ValidationError as exc:
+        excerpt = f"malformed {label} payload: {exc!r}"[:_PAYLOAD_EXCERPT_LIMIT]
+        raise KanbanToolHTTPError(
+            f"Kanban Tool API returned a malformed {label} payload.",
+            status_code=200,
+            body_excerpt=excerpt,
+        ) from exc
+
+
+def _decode_list(model: type[_ModelT], data: Any, *, label: str) -> list[_ModelT]:
+    """List counterpart of ``_decode`` — validates each element together so a
+    single bad entry surfaces one wrapped error rather than a partial list."""
+    try:
+        return [model.model_validate(item) for item in data]
+    except ValidationError as exc:
+        excerpt = f"malformed {label} payload: {exc!r}"[:_PAYLOAD_EXCERPT_LIMIT]
+        raise KanbanToolHTTPError(
+            f"Kanban Tool API returned a malformed {label} payload.",
+            status_code=200,
+            body_excerpt=excerpt,
+        ) from exc
+
 
 # Every tool below raises typed ``KanbanToolError`` subclasses on failure —
 # ``KanbanToolPermissionError`` (401/403), ``KanbanToolValidationError`` (422
@@ -51,19 +87,7 @@ async def list_boards() -> list[Board]:
     ``board_id`` values for the other tools."""
     data = await _get_client().request("GET", "users/current")
     raw = data.get("boards", []) if isinstance(data, dict) else []
-    try:
-        return [Board.model_validate(b) for b in raw]
-    except ValidationError as exc:
-        # The HTTP call succeeded (200) but a board entry was missing required
-        # fields or otherwise malformed. Wrap as KanbanToolHTTPError so the
-        # error surface stays consistent with 4xx/5xx flows — callers always
-        # see a typed KanbanToolError, never a raw pydantic exception.
-        excerpt = f"malformed boards payload: {exc!r}"[:_PAYLOAD_EXCERPT_LIMIT]
-        raise KanbanToolHTTPError(
-            "Kanban Tool API returned a malformed boards payload.",
-            status_code=200,
-            body_excerpt=excerpt,
-        ) from exc
+    return _decode_list(Board, raw, label="boards")
 
 
 @mcp.tool
@@ -77,8 +101,7 @@ async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
     # bogus 0/-N never reaches the API as a confusing 404. FastMCP also
     # validates this from the wire side via the JSON schema.
     data = await _get_client().request("GET", f"boards/{board_id}")
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed board payload").
-    return Board.model_validate(data)
+    return _decode(Board, data, label="board")
 
 
 @mcp.tool
@@ -91,8 +114,7 @@ async def get_task(task_id: int) -> Task:
     of the task).
     Raises ``KanbanToolHTTPError(404)`` if the task is unknown or inaccessible."""
     data = await _get_client().request("GET", f"tasks/{task_id}")
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
-    return Task.model_validate(data)
+    return _decode(Task, data, label="task")
 
 
 @mcp.tool
@@ -104,8 +126,7 @@ async def recent_changes(board_id: int, since: datetime | None = None) -> list[C
     Poll sparingly: 30-120s cadence, not per-keystroke."""
     params = {"since": since.isoformat()} if since is not None else None
     data = await _get_client().request("GET", f"boards/{board_id}/changelog", params=params)
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed changelog payload").
-    return [ChangelogEntry.model_validate(entry) for entry in data]
+    return _decode_list(ChangelogEntry, data, label="changelog")
 
 
 # Hard ceiling on a single page. Defends against an LLM hallucinating a huge
@@ -157,8 +178,7 @@ async def search_tasks(
     # results in ``{"results": [...], "pagination": {...}}``. Without those
     # params it returns a bare list — but we always paginate.
     raw = data.get("results", []) if isinstance(data, dict) else []
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed search payload").
-    return [Task.model_validate(t) for t in raw]
+    return _decode_list(Task, raw, label="search")
 
 
 @mcp.tool
@@ -204,8 +224,7 @@ async def create_task(
     # ``{"task": {...}}`` Rails-style envelope (vs. flat top-level fields).
     body = {"task": payload}
     data = await _get_client().request("POST", "tasks", json=body)
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
-    return Task.model_validate(data)
+    return _decode(Task, data, label="task")
 
 
 # Caller-facing aliases mapped to their wire names. ``lane_id`` and
@@ -270,8 +289,7 @@ async def _patch_task(
 
     body = {"task": cleaned}
     data = await _get_client().request(method, f"tasks/{task_id}", json=body)
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
-    return Task.model_validate(data)
+    return _decode(Task, data, label="task")
 
 
 @mcp.tool
@@ -356,8 +374,7 @@ async def archive_task(task_id: int) -> Task:
     # into a helper until there's a second caller (YAGNI).
     body = {"_action": "archive"}
     data = await _get_client().request("PATCH", f"tasks/{task_id}", json=body)
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed task payload").
-    return Task.model_validate(data)
+    return _decode(Task, data, label="task")
 
 
 @mcp.tool
@@ -367,8 +384,7 @@ async def add_comment(task_id: int, text: str) -> Comment:
     ``KanbanToolValidationError`` from the API."""
     body = {"comment": {"text": text}}
     data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed comment payload").
-    return Comment.model_validate(data)
+    return _decode(Comment, data, label="comment")
 
 
 @mcp.tool
@@ -401,8 +417,7 @@ async def add_subtask(task_id: int, title: str) -> Subtask:
     # Trusting the bare-object response shape (mirrors get_task on main); no
     # defensive ``{"subtask": {...}}`` unwrap. M3 can revisit if the API ever
     # surprises us.
-    # M3: consider wrapping ValidationError as KanbanToolHTTPError("malformed subtask payload").
-    return Subtask.model_validate(data)
+    return _decode(Subtask, data, label="subtask")
 
 
 def run() -> None:
