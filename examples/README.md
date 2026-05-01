@@ -14,3 +14,6 @@ All examples assume an account at `rynbou.kanbantool.com` (i.e. `KANBANTOOL_DOMA
 - [`03-poll-recent-changes.md`](03-poll-recent-changes.md) — polling flow:
   using `recent_changes` to track board activity over time, and a note on why
   there are no webhooks.
+- [`04-user-discovery.md`](04-user-discovery.md) — assignment flow:
+  using `whoami` and `list_board_collaborators` to resolve user ids
+  before calling `update_task`.
