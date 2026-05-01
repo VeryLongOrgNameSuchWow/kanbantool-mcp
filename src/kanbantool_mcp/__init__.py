@@ -1,3 +1,3 @@
 """kanbantool-mcp: MCP server bridging Claude Code with the Kanban Tool API v3."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
