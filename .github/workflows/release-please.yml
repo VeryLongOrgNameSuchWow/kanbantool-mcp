@@ -1,0 +1,34 @@
+name: release-please
+
+# Watches conventional-commit messages on ``main`` and opens (or updates) a
+# release PR that bumps ``__version__`` in ``src/kanbantool_mcp/__init__.py``
+# and prepends an entry to ``CHANGELOG.md``. Merging the release PR triggers
+# release-please-action to create the corresponding ``v*`` tag and GitHub
+# Release; that tag then fires ``release.yml`` which builds and publishes to
+# PyPI.
+#
+# This means a normal cut is just:
+#  1. Land conventional-commit PRs on ``main`` (``feat:`` / ``fix:`` /
+#     ``BREAKING CHANGE:`` etc.).
+#  2. Wait for release-please to open / refresh the release PR.
+#  3. Review and merge it.
+#  4. Tag + publish happens automatically.
+#
+# See https://github.com/googleapis/release-please-action and
+# ``RELEASING.md`` for the full flow.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

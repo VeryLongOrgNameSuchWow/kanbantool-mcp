@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "python",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "packages": {
+    ".": {
+      "package-name": "kanbantool-mcp",
+      "version-file": "src/kanbantool_mcp/__init__.py",
+      "changelog-path": "CHANGELOG.md"
+    }
+  }
+}

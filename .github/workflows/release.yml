@@ -23,7 +23,16 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
-          generate_release_notes: true
+          # Release notes are owned by release-please (see release-please.yml
+          # + release-please-config.json). It opens the release PR, builds the
+          # CHANGELOG entry from conventional commits, and creates the GitHub
+          # Release with that body when the PR merges. By the time this tag
+          # fires, the release already exists with curated notes — softprops
+          # just attaches the build artifacts.
+          #
+          # If a release is cut manually (emergency hotfix bypassing
+          # release-please), softprops will create the release here with no
+          # notes; populate via ``gh release edit vX.Y.Z --notes …`` after.
           # Explicit glob — ``dist/*`` would also pick up ``dist/.gitignore``
           # that ``uv build`` writes (a one-line ``*`` to keep ``dist/`` out
           # of source). v0.1.0 shipped that file as a release asset; this
