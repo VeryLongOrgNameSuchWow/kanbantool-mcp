@@ -100,6 +100,53 @@ async def test_get_task_populates_renamed_wire_fields(
     assert task.block_reason is None or isinstance(task.block_reason, str)
 
 
+async def test_get_task_surfaces_additive_v3_fields(
+    _inject_live_client: KanbanToolClient, populated_board_id: int
+) -> None:
+    """Type-only assertions that the additive #38 / #59 fields are reachable
+    through the model. We don't lock values — the test account's data
+    drifts — but the v3 wire payload should advertise these keys, so the
+    typed attributes must exist on the resulting ``Task`` and respect their
+    declared types where present."""
+    search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
+    assert search_hits, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits[0].id
+
+    task = await get_task(task_id)
+
+    # Sizing & estimation
+    assert task.size_estimate is None or isinstance(task.size_estimate, int)
+    assert task.size_estimate_description is None or isinstance(task.size_estimate_description, str)
+    assert task.time_estimate is None or isinstance(task.time_estimate, int)
+    # Search / discoverability — list of strings on the wire; ``None`` is
+    # coerced to ``[]`` so callers see a stable list type.
+    assert isinstance(task.search_tags, list)
+    assert all(isinstance(tag, str) for tag in task.search_tags)
+    # Visual markers
+    assert task.card_color is None or isinstance(task.card_color, str)
+    assert task.card_color_in_rgb is None or isinstance(task.card_color_in_rgb, str)
+    assert task.card_color_invert is None or isinstance(task.card_color_invert, bool)
+    assert task.card_type_id is None or isinstance(task.card_type_id, int)
+    # Schedule fields (raw dicts)
+    assert task.recurring_schedule is None or isinstance(task.recurring_schedule, dict)
+    assert task.reminders_schedule is None or isinstance(task.reminders_schedule, dict)
+    # Relationships — collection fields default to ``[]``, never ``None``.
+    assert isinstance(task.linked_tasks, list)
+    assert task.linked_tasks_status is None or isinstance(task.linked_tasks_status, str)
+    assert isinstance(task.task_dependencies, list)
+    assert isinstance(task.collaborators, list)
+    # Attachments
+    assert isinstance(task.attachments, list)
+    assert task.attachments_count is None or isinstance(task.attachments_count, int)
+    # Provenance & state
+    assert task.created_by_id is None or isinstance(task.created_by_id, int)
+    assert task.moved_at is None or isinstance(task.moved_at, str)
+    assert task.postponed_until is None or isinstance(task.postponed_until, str)
+    assert task.subtasks_completed_count is None or isinstance(task.subtasks_completed_count, int)
+    assert task.external_id is None or isinstance(task.external_id, str)
+    assert task.external_link is None or isinstance(task.external_link, str)
+
+
 async def test_recent_changes_populates_renamed_fields(
     _inject_live_client: KanbanToolClient, populated_board_id: int
 ) -> None:

@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 class Column(BaseModel):
@@ -129,11 +129,93 @@ class Task(BaseModel):
     timers_total: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
-    # v0.2.0: additive fields confirmed in the live-API spike — ``size_estimate``,
-    # ``card_color``, ``search_tags``, ``collaborators``, ``card_type_id``,
-    # ``custom_field_1..15``, ``recurring_schedule``, ``reminders_schedule``,
-    # ``linked_tasks``, ``task_dependencies``. Tracked under the High-Value
-    # tier of #38; the 15 numbered custom fields need a dict-shaped design call.
+
+    # --- Sizing & estimation -------------------------------------------------
+    # Story-point / abstract size as set on the card.
+    size_estimate: int | None = None
+    # Free-form description accompanying ``size_estimate``.
+    size_estimate_description: str | None = None
+    # Estimated effort in seconds (distinct from ``timers_total``, which is
+    # recorded actuals).
+    time_estimate: int | None = None
+
+    # --- Search / discoverability -------------------------------------------
+    # Free-form list of search-helper strings; distinct from ``tags`` (which is
+    # the comma-separated user-facing label string). Live spike confirmed the
+    # wire shape is a list of strings.
+    search_tags: list[str] = Field(default_factory=list)
+
+    # --- Visual markers ------------------------------------------------------
+    # Named card colour, e.g. ``"red"`` (separate from ``color`` which is a
+    # hex/CSS string on some accounts).
+    card_color: str | None = None
+    # API-provided RGB rendering of ``card_color``, useful when a UI wants to
+    # avoid maintaining its own colour-name → swatch lookup.
+    card_color_in_rgb: str | None = None
+    # True when the card-colour foreground should be inverted for contrast.
+    card_color_invert: bool | None = None
+    # Per-account card-type id (board-config concept; the LLM mostly treats
+    # this as opaque).
+    card_type_id: int | None = None
+
+    # --- Schedule fields -----------------------------------------------------
+    # raw API shape passed through; typed wrapper deferred to v0.x.x
+    recurring_schedule: dict[str, Any] | None = None
+    # raw API shape passed through; typed wrapper deferred to v0.x.x
+    reminders_schedule: dict[str, Any] | None = None
+
+    # --- Relationships -------------------------------------------------------
+    # raw entries — typed sub-model can come when an MCP tool actually needs it
+    linked_tasks: list[dict[str, Any]] = Field(default_factory=list)
+    # Status string summarising the linked-task relationship state.
+    linked_tasks_status: str | None = None
+    # raw entries — typed sub-model can come when an MCP tool actually needs it
+    task_dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    # raw entries — typed sub-model can come when an MCP tool actually needs it
+    collaborators: list[dict[str, Any]] = Field(default_factory=list)
+
+    # --- Attachments ---------------------------------------------------------
+    # raw entries — typed sub-model can come when an MCP tool actually needs it
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    attachments_count: int | None = None
+
+    # --- Provenance & state --------------------------------------------------
+    # User id of the task's creator.
+    created_by_id: int | None = None
+    # ISO 8601 timestamp of the task's last column/swimlane move.
+    moved_at: str | None = None
+    # ISO 8601 timestamp the task is snoozed/postponed until.
+    postponed_until: str | None = None
+    # Companion to ``subtasks_count`` — number of subtasks already completed.
+    subtasks_completed_count: int | None = None
+    # Caller-supplied identifier for cross-system linking.
+    external_id: str | None = None
+    # Caller-supplied URL for cross-system linking.
+    external_link: str | None = None
+    # v0.2.0+: ``custom_field_1..15`` (15 numbered fields, dict-shaped wrapper
+    # design call still pending) and ``changelogs``/``time_trackers`` (heavy
+    # nested data — exposed via dedicated tools rather than inlined here)
+    # remain dropped via ``extra="ignore"`` for now. Tracked under #38.
+
+    # The Kanban Tool API serialises empty collections as JSON ``null`` rather
+    # than ``[]`` for several of these additive fields (live spike confirmed
+    # for ``linked_tasks``; the other detail-only collections behave the same
+    # way). Coerce ``None`` → ``[]`` at validation time so callers see a
+    # consistent list-typed surface and don't have to defensive-check for
+    # ``None``. Applies to all the additive collection fields; the existing
+    # ``subtasks`` field is a typed sub-model list and is omitted from this
+    # list so the original parsing behaviour stays untouched.
+    @field_validator(
+        "linked_tasks",
+        "task_dependencies",
+        "collaborators",
+        "attachments",
+        "search_tags",
+        mode="before",
+    )
+    @classmethod
+    def _none_to_empty_list(cls, value: Any) -> Any:
+        return [] if value is None else value
 
     # ``@computed_field`` is required so pydantic v2 includes the derived
     # boolean in ``model_dump()`` and ``model_json_schema()`` — a bare
