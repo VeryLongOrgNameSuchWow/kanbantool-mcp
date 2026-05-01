@@ -46,6 +46,10 @@ User discovery tools (post-M3):
 
 M4 — Completeness:
 - `list_custom_field_definitions` — per-board metadata for the 15 `custom_field_*` slots (label, type, enabled state); pair with `Task.custom_fields[custom_field_N]` for values
+- `start_timer` — start a per-user time tracker on a task (POST `/time_trackers.json` with `board_id`+`task_id`)
+- `stop_timer` — stop a timer (PUT, `ended_at` defaults to "now")
+- `delete_timer` — hard-delete a timer
+- `list_my_timers` — current user's time trackers across all tasks
 
 ## Kanban Tool API quirks
 

@@ -130,9 +130,14 @@ class Task(BaseModel):
     # (e.g. ``search_tasks`` results), where the API omits ``subtasks``.
     subtasks: list[Subtask] = Field(default_factory=list)
     comments_count: int | None = None
-    # Flat seconds. The wrapped ``{ "total": ..., "by_user": ... }`` shape is a
-    # separate concern — exposed via a dedicated time-tracker tool later.
+    # Flat seconds — the running total across all users' completed timers
+    # on this task. ``time_trackers`` below is the per-timer detail.
     timers_total: int | None = None
+    # Inline per-user timer entries on the task detail endpoint. Each entry
+    # is one user's timer (running or finished) on this task. ``TimeTracker``
+    # is forward-referenced; the definition lives after ``User`` near the
+    # bottom of the file.
+    time_trackers: list[TimeTracker] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -421,3 +426,56 @@ class CustomFieldDefinition(BaseModel):
     # UI position on the card detail panel — useful when you want to
     # surface fields in the order the user sees them.
     position: int | None = None
+
+
+class TimeTracker(BaseModel):
+    """A single user's elapsed-time record on a task.
+
+    Time tracking in Kanban Tool is per-user, per-task — each ``TimeTracker``
+    is one user's running or finished timer. The aggregate counters on
+    ``Task`` (``timers_total``, ``timers_active_count``, etc.) summarise
+    across users.
+
+    Live-spike-confirmed wire shape: API returns the timer fields plus a
+    nested ``task`` object (priority/name/etc.) that we drop via
+    ``extra="ignore"`` — the timer's own ``task_id`` is sufficient.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    # User the timer belongs to (timers are per-user, per-task).
+    user_id: int | None = None
+    board_id: int | None = None
+    task_id: int | None = None
+    # ISO 8601 timestamps. ``ended_at is None`` means the timer is still
+    # running; the typed ``is_running`` flag below derives this.
+    started_at: str | None = None
+    ended_at: str | None = None
+    # ``True`` for timers exposed in the user's normal timer list (vs.
+    # archived/postponed entries).
+    listed: bool | None = None
+    # Sprint id the timer was started inside; matches ``task_id`` when no
+    # sprint is active.
+    sprint_id: int | None = None
+    # Elapsed seconds since the most recent resume — distinct from the task
+    # aggregate ``timers_total``.
+    seconds_from_resumed_sprint: int | None = None
+    # Per-user ordering on the timer list UI; rarely meaningful to the LLM.
+    position: int | None = None
+    # ISO timestamps for the highlight + enlist UI features.
+    highlighted_at: str | None = None
+    enlist_at: str | None = None
+    # Audit timestamps.
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    # ``@computed_field`` here so pydantic v2 includes the derived flag in
+    # ``model_dump()`` / ``model_json_schema()`` (a bare ``@property`` is
+    # invisible to the serialiser, which means FastMCP wouldn't surface it
+    # to the LLM).
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_running(self) -> bool:
+        """True iff the timer is still active (no ``ended_at`` set)."""
+        return self.ended_at is None

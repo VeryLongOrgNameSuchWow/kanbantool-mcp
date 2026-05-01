@@ -152,6 +152,14 @@ class KanbanToolClient:
 
         _raise_for_status(response, method, normalized)
 
+        # DELETE endpoints conventionally return ``204 No Content`` (or 200
+        # with an empty body) — there's nothing to JSON-decode. Returning
+        # ``None`` lets callers like ``delete_timer`` propagate cleanly
+        # without forcing them to bypass this method. Other verbs that
+        # legitimately return empty bodies hit the same path.
+        if response.status_code == 204 or not response.content:
+            return None
+
         try:
             return response.json()
         except json.JSONDecodeError:

@@ -13,7 +13,7 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 
 ## Status
 
-**Alpha.** The 19-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
+**Alpha.** The 23-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades.
 
 ## Install
 
@@ -89,6 +89,10 @@ Add to your MCP client's `mcp.json`:
 | `get_user` | Fetch one user by id. | `user_id` |
 | `list_board_collaborators` | List users with access to a board (the canonical user-discovery surface — the API has no bulk list-users endpoint). | `board_id` |
 | `list_custom_field_definitions` | List the per-board metadata for the 15 ``custom_field_*`` slots (label, type, enabled state). Use to interpret the values surfaced on `Task.custom_fields`. | `board_id` |
+| `start_timer` | Start a per-user time tracker on a task. | `task_id`, `board_id` |
+| `stop_timer` | Stop a running time tracker. ``ended_at`` defaults to "now" if omitted. | `timer_id`, `ended_at?` |
+| `delete_timer` | Delete a time tracker (hard-delete). Returns `None`. | `timer_id` |
+| `list_my_timers` | List the authenticated user's time trackers across all tasks. | — |
 
 (`ping` exists as a transport smoke test; not listed above.)
 
