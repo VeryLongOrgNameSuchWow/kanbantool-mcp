@@ -72,7 +72,7 @@ M5 — Custom-field writes & comment polish:
 - **M3** — Polish & release: error messages, retries, docs pass, PyPI publish. *Complete.*
 - **M4** — Completeness: custom-field reads + time-tracker tools. *Complete.*
 - **M5** — Custom-field writes + comment polish: `set_custom_field`, `delete_comment` (the API has no comment-edit endpoint), and the `add_comment` wire-field bugfix (`text` → `content`). *Complete.*
-- **M6** — v1.0 readiness: SemVer commitment policy, README pass, error-message audit, RELEASING.md updates. *In progress.*
+- **M6** — v1.0 readiness: SemVer commitment policy, README pass, error-message audit, RELEASING.md updates. *Complete.*
 - **M7** — Pre-1.0 naming sweep: align Python parameter names with wire shapes / sibling tools before v1.0 locks them in. `add_comment(text=...)` → `add_comment(content=...)` (matches the wire field that the M5 bugfix had to send anyway). `add_subtask(title=...)` → `add_subtask(name=...)` (matches `Subtask.name` and `update_subtask(name=...)`). Wire bodies unchanged; this is purely a Python parameter rename. *Complete.*
 
 ## Codebase conventions
