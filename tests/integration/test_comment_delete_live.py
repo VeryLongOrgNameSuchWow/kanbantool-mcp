@@ -63,7 +63,7 @@ async def test_delete_comment_returns_soft_deleted_comment(
     (the record is retained server-side, just flagged)."""
     posted = await add_comment(
         task_id=throwaway_task_id,
-        text="kanbantool-mcp live integration: about to be deleted",
+        content="kanbantool-mcp live integration: about to be deleted",
     )
     assert posted.deleted_at is None  # sanity: live comments aren't pre-deleted
 
