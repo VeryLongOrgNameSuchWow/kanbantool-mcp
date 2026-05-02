@@ -152,8 +152,12 @@ async def test_start_timer_404_raises_http_error(_inject_client: KanbanToolClien
 async def test_start_timer_malformed_response_raises_http_error(
     _inject_client: KanbanToolClient,
 ) -> None:
+    # ``id`` is intentionally Optional so inline-on-Task entries (which omit
+    # it) parse — see ``test_time_tracker_inline_on_task_omits_id``. To
+    # exercise the malformed-response path we use a typed-field violation:
+    # ``id`` is ``int | None`` so a non-numeric string is uncoercible.
     with respx.mock() as router:
-        router.post(TIMERS_URL).mock(return_value=httpx.Response(200, json={"name": "no-id"}))
+        router.post(TIMERS_URL).mock(return_value=httpx.Response(200, json={"id": "not-a-number"}))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
             await start_timer(task_id=1, board_id=2)
     assert exc_info.value.status_code == 200
@@ -223,8 +227,12 @@ async def test_stop_timer_404_raises_http_error(_inject_client: KanbanToolClient
 async def test_stop_timer_malformed_response_raises_http_error(
     _inject_client: KanbanToolClient,
 ) -> None:
+    # See ``test_start_timer_malformed_response_raises_http_error`` for why
+    # ``id`` is the typed-field violation we use here.
     with respx.mock() as router:
-        router.put(_timer_url(42)).mock(return_value=httpx.Response(200, json={"name": "no-id"}))
+        router.put(_timer_url(42)).mock(
+            return_value=httpx.Response(200, json={"id": "not-a-number"})
+        )
         with pytest.raises(KanbanToolHTTPError) as exc_info:
             await stop_timer(timer_id=42, ended_at="2026-05-01T19:00:00Z")
     assert exc_info.value.status_code == 200
@@ -330,13 +338,19 @@ async def test_list_my_timers_401_raises_permission_error(
 async def test_list_my_timers_malformed_entry_raises_http_error(
     _inject_client: KanbanToolClient,
 ) -> None:
-    """A 200 with a timer entry missing ``id`` surfaces as
-    ``KanbanToolHTTPError(status_code=200)`` — never raw pydantic."""
+    """A 200 with a timer entry whose typed field is uncoercible surfaces as
+    ``KanbanToolHTTPError(status_code=200)`` — never raw pydantic.
+
+    (Used to exercise ``missing id`` here, but ``id`` was widened to
+    Optional so ``Task.time_trackers`` round-trips against the live
+    inline-on-task shape that omits it. Use ``id`` with a non-numeric
+    string instead — still a typed violation.)
+    """
     payload = {
         "id": 7,
         "time_trackers": [
             _timer_payload(id=1),
-            {"user_id": 7},  # missing id
+            {"id": "not-a-number"},  # uncoercible int
         ],
     }
     with respx.mock(assert_all_called=True) as router:
@@ -372,3 +386,61 @@ def test_task_time_trackers_round_trips() -> None:
 
     bare = Task.model_validate({"id": 50001, "name": "compact"})
     assert bare.time_trackers == []
+
+
+def test_time_tracker_inline_on_task_omits_id() -> None:
+    """The live ``/tasks/{id}.json`` endpoint surfaces inline timer entries
+    *without* an ``id`` field — only the dedicated ``/time_trackers/...``
+    endpoints and ``users/current.json`` include it. Make sure the model
+    accepts the no-id shape so ``get_task`` doesn't 'malformed payload' on
+    every task that has had a timer.
+
+    Live wire shape (verified against rynbou.kanbantool.com):
+        {"user_id": ..., "board_id": ..., "task_id": ...,
+         "listed": true, "started_at": "...", "ended_at": "..."}
+    No ``id``, no ``sprint_id``, no ``position``, no ``created_at``.
+    """
+    inline_entry = {
+        "user_id": 7,
+        "board_id": 4711,
+        "task_id": 50000,
+        "listed": True,
+        "started_at": "2026-05-01T18:00:00.000+02:00",
+        "ended_at": "2026-05-01T19:00:00.000+02:00",
+    }
+    timer = TimeTracker.model_validate(inline_entry)
+    assert timer.id is None
+    assert timer.task_id == 50000
+    assert timer.is_running is False
+
+
+def test_get_task_with_inline_timers_does_not_malformed() -> None:
+    """Regression: a Task payload carrying inline ``time_trackers`` whose
+    entries lack ``id`` (the live ``/tasks/{id}.json`` shape) must validate
+    without raising. Pre-fix, every task that had ever had a timer started
+    on it would 'malformed payload' on every subsequent ``get_task`` /
+    ``update_task`` / ``move_task`` call, blocking the whole
+    timer-tracking workflow.
+    """
+    from kanbantool_mcp.models import Task
+
+    payload = {
+        "id": 50000,
+        "name": "tracked task",
+        "board_id": 4711,
+        "time_trackers": [
+            {
+                "user_id": 7,
+                "board_id": 4711,
+                "task_id": 50000,
+                "listed": True,
+                "started_at": "2026-05-01T18:00:00.000+02:00",
+                "ended_at": "2026-05-01T19:00:00.000+02:00",
+            }
+        ],
+    }
+    task = Task.model_validate(payload)
+    assert task.id == 50000
+    assert len(task.time_trackers) == 1
+    assert task.time_trackers[0].id is None
+    assert task.time_trackers[0].is_running is False

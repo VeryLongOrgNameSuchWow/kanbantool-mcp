@@ -455,7 +455,12 @@ class TimeTracker(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    id: int
+    # ``None`` when the timer is surfaced inline on ``Task.time_trackers`` —
+    # the ``/tasks/{id}.json`` endpoint omits ``id`` from each entry there
+    # (live spike confirmed). Set on every other surface: the dedicated
+    # ``/time_trackers/...`` endpoints, and ``users/current.json``'s
+    # ``time_trackers`` list.
+    id: int | None = None
     # User the timer belongs to (timers are per-user, per-task).
     user_id: int | None = None
     board_id: int | None = None
