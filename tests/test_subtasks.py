@@ -577,6 +577,20 @@ async def test_reorder_subtasks_rejects_non_positive_task_id(
         await reorder_subtasks(task_id=0, ids=[1])
 
 
+@pytest.mark.parametrize("bad_ids", [[0], [1, 2, 0], [-1], [1, -3]])
+async def test_reorder_subtasks_rejects_non_positive_id_in_list(
+    _inject_client: KanbanToolClient,
+    bad_ids: list[int],
+) -> None:
+    """Each element of ``ids`` is bounded ``ge=1`` — a 0/-N anywhere in the
+    list rejects at the validate_call boundary, before the empty/duplicate
+    guards run."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        await reorder_subtasks(task_id=TASK_ID, ids=bad_ids)
+
+
 async def test_reorder_subtasks_422_raises_validation_error(
     _inject_client: KanbanToolClient,
 ) -> None:

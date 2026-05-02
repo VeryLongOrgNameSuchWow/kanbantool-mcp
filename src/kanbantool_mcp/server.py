@@ -636,7 +636,7 @@ async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
 @validate_call
 async def reorder_subtasks(
     task_id: Annotated[int, Field(ge=1)],
-    ids: list[int],
+    ids: list[Annotated[int, Field(ge=1)]],
 ) -> list[Subtask]:
     """Reorder subtasks under a task. Returns the subtasks in the new order.
 
