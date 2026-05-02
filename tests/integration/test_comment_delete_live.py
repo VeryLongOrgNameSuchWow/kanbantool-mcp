@@ -1,15 +1,20 @@
-"""Live integration tests for the M5 ``delete_comment`` tool.
+"""Live integration tests for the M2/M5 comment write tools.
 
-Coverage scope: the comment soft-delete flow end-to-end against the real
-Kanban Tool API. The interesting contract bit live coverage locks in:
+Coverage scope: ``add_comment`` (M2) and ``delete_comment`` (M5) end-to-end
+against the real Kanban Tool API. The interesting contract bits live
+coverage locks in:
 
+- ``add_comment`` POSTs and returns a ``Comment`` with ``content`` populated.
+  The body field is ``content``, not ``text`` — the M5 wire-field bugfix
+  documents this; locking it live prevents silent regression to the broken
+  pre-fix shape (every call 422'd ``Content can't be blank``).
 - ``delete_comment`` returns a ``Comment`` with ``deleted_at`` populated
   (soft-delete, mirroring ``delete_subtask``). The offline mock stipulates
   this; the live test confirms the API actually behaves that way.
 
 Cleanup: each test creates a throwaway task and a comment on it, exercises
-the delete, then archives the task. No orphans — the parent task is gone
-after the test even if assertions fail.
+the operation, then archives the task. No orphans — the parent task is
+gone after the test even if assertions fail.
 """
 
 from __future__ import annotations
@@ -52,6 +57,36 @@ async def throwaway_task_id(_inject_live_client: KanbanToolClient) -> AsyncItera
     finally:
         with contextlib.suppress(Exception):
             await archive_task(task.id)
+
+
+async def test_add_comment_returns_comment_with_content(
+    _inject_live_client: KanbanToolClient,
+    throwaway_task_id: int,
+) -> None:
+    """``add_comment`` POSTs and returns a ``Comment`` whose ``content``
+    echoes the request. The wire-field name is ``content`` (not ``text``);
+    pre-M5 the body said ``text`` and every call 422'd ``Content can't be
+    blank``. This test is the live regression guard for that fix.
+
+    The created comment is a real artifact on the parent task — clean up by
+    soft-deleting it before the parent is archived on fixture teardown.
+    Soft-delete is sufficient: archived parents drop their comments from
+    listings regardless, and the test is about ``add_comment``'s contract,
+    not the lifecycle interaction."""
+    sentinel = "kanbantool-mcp live integration: add_comment probe"
+    posted = await add_comment(task_id=throwaway_task_id, content=sentinel)
+    try:
+        assert isinstance(posted, Comment)
+        assert posted.id > 0
+        # Locking the content round-trip is the bit the M5 wire-field bugfix
+        # actually unblocked — pre-fix this assertion would never run because
+        # the create call 422'd.
+        assert posted.content == sentinel
+        # Sanity: a freshly-posted comment isn't pre-deleted.
+        assert posted.deleted_at is None
+    finally:
+        with contextlib.suppress(Exception):
+            await delete_comment(task_id=throwaway_task_id, comment_id=posted.id)
 
 
 async def test_delete_comment_returns_soft_deleted_comment(
