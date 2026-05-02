@@ -508,17 +508,12 @@ async def set_custom_field(
 
 @mcp.tool
 @validate_call
-async def add_comment(task_id: Annotated[int, Field(ge=1)], text: str) -> Comment:
+async def add_comment(task_id: Annotated[int, Field(ge=1)], content: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
-    content, author, and timestamps. Empty ``text`` typically raises
-    ``KanbanToolValidationError`` from the API; the field key in
-    ``field_errors`` is ``"content"``, not ``"text"`` (that's the wire field
-    name, not the Python parameter)."""
-    # Wire quirk: the body field is ``content``, not ``text`` — sending
-    # ``{"comment": {"text": ...}}`` makes the live API 422 with
-    # ``Content can't be blank``. Confirmed via spike. The tool's caller-facing
-    # ``text`` parameter stays unchanged for ergonomics; the rename is internal.
-    body = {"comment": {"content": text}}
+    content, author, and timestamps. Empty ``content`` typically raises
+    ``KanbanToolValidationError`` from the API; the ``field_errors`` key
+    matches the parameter name (``"content"``)."""
+    body = {"comment": {"content": content}}
     data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
     return _decode(Comment, data, label="comment")
 
@@ -556,11 +551,12 @@ async def list_subtasks(task_id: int) -> list[Subtask]:
 
 
 @mcp.tool
-async def add_subtask(task_id: int, title: str) -> Subtask:
+async def add_subtask(task_id: int, name: str) -> Subtask:
     """Add a subtask to a task. Returns the created ``Subtask``.
 
-    ``title`` is the human-readable label. Empty ``title`` typically raises
-    ``KanbanToolValidationError`` from the API."""
+    ``name`` is the human-readable label. Empty ``name`` typically raises
+    ``KanbanToolValidationError`` from the API. Mirrors the parameter name
+    used by ``update_subtask`` and the wire/model field on ``Subtask.name``."""
     # Wire quirk: ``POST /subtasks.json`` takes a flat top-level body —
     # ``{"name": ..., "task_id": ...}`` — NOT the Rails-style ``{"subtask": {...}}``
     # envelope used by ``POST /tasks.json`` and friends. A spike against the
@@ -568,7 +564,7 @@ async def add_subtask(task_id: int, title: str) -> Subtask:
     # parent linkage (the response's ``task_id`` came back null and the
     # subtask never appeared on the parent task). Don't copy ``create_task``'s
     # shape here.
-    body = {"name": title, "task_id": task_id}
+    body = {"name": name, "task_id": task_id}
     data = await _get_client().request("POST", "subtasks", json=body)
     return _decode(Subtask, data, label="subtask")
 

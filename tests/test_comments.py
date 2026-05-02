@@ -1,8 +1,9 @@
 """Tests for the add_comment / delete_comment MCP tools.
 
-Regression bait: this file asserts the wire field is ``content``, not ``text``
-— pre-fix prod always 422'd because the body was sent as
-``{"comment": {"text": ...}}``. Both sides of the new contract live here.
+Regression bait: this file asserts the wire body field is ``content``, not
+``text`` — pre-M5 prod always 422'd because the body was sent as
+``{"comment": {"text": ...}}``. The Python parameter is also ``content`` (M7
+naming sweep) so both sides of the contract are aligned.
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ async def test_add_comment_happy_path_full_payload(_inject_client: KanbanToolCli
         route = router.post(COMMENTS_URL).mock(
             return_value=httpx.Response(201, json=response_payload),
         )
-        comment = await add_comment(task_id=TASK_ID, text="Looks good to me.")
+        comment = await add_comment(task_id=TASK_ID, content="Looks good to me.")
 
     assert comment.id == COMMENT_ID
     assert comment.content == "Looks good to me."
@@ -78,7 +79,7 @@ async def test_add_comment_minimal_response_payload(_inject_client: KanbanToolCl
     response_payload = {"id": 5, "content": "hi"}
     with respx.mock(assert_all_called=True) as router:
         router.post(COMMENTS_URL).mock(return_value=httpx.Response(201, json=response_payload))
-        comment = await add_comment(task_id=TASK_ID, text="hi")
+        comment = await add_comment(task_id=TASK_ID, content="hi")
 
     assert comment.id == 5
     assert comment.content == "hi"
@@ -95,7 +96,7 @@ async def test_add_comment_url_shape(_inject_client: KanbanToolClient) -> None:
         route = router.post(COMMENTS_URL).mock(
             return_value=httpx.Response(201, json={"id": 1, "content": "hi"}),
         )
-        await add_comment(task_id=TASK_ID, text="hi")
+        await add_comment(task_id=TASK_ID, content="hi")
 
     request = route.calls.last.request
     assert request.method == "POST"
@@ -112,7 +113,7 @@ async def test_add_comment_body_uses_content_not_text(
         route = router.post(COMMENTS_URL).mock(
             return_value=httpx.Response(201, json={"id": 1, "content": "hi"}),
         )
-        await add_comment(task_id=TASK_ID, text="hi")
+        await add_comment(task_id=TASK_ID, content="hi")
 
     body = _request_body(route)
     assert body == {"comment": {"content": "hi"}}
@@ -131,7 +132,7 @@ async def test_add_comment_401_raises_permission_error(
             return_value=httpx.Response(401, text="unauthorized"),
         )
         with pytest.raises(KanbanToolPermissionError):
-            await add_comment(task_id=TASK_ID, text="hi")
+            await add_comment(task_id=TASK_ID, content="hi")
 
 
 async def test_add_comment_422_raises_validation_error(
@@ -146,7 +147,7 @@ async def test_add_comment_422_raises_validation_error(
             return_value=httpx.Response(422, json=error_body),
         )
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_comment(task_id=TASK_ID, text="")
+            await add_comment(task_id=TASK_ID, content="")
 
     err = exc_info.value
     assert isinstance(err, KanbanToolValidationError)
@@ -158,7 +159,7 @@ async def test_add_comment_404_raises_http_error(_inject_client: KanbanToolClien
     with respx.mock() as router:
         router.post(COMMENTS_URL).mock(return_value=httpx.Response(404, text="task not found"))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_comment(task_id=TASK_ID, text="hi")
+            await add_comment(task_id=TASK_ID, content="hi")
     assert exc_info.value.status_code == 404
     assert not isinstance(exc_info.value, KanbanToolValidationError)
 
@@ -167,7 +168,7 @@ async def test_add_comment_500_raises_http_error(_inject_client: KanbanToolClien
     with respx.mock() as router:
         router.post(COMMENTS_URL).mock(return_value=httpx.Response(500, text="server exploded"))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_comment(task_id=TASK_ID, text="hi")
+            await add_comment(task_id=TASK_ID, content="hi")
     assert exc_info.value.status_code == 500
 
 
@@ -182,7 +183,7 @@ async def test_add_comment_malformed_response_raises_http_error(
             return_value=httpx.Response(201, json={"content": "no-id"}),
         )
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_comment(task_id=TASK_ID, text="hi")
+            await add_comment(task_id=TASK_ID, content="hi")
 
     assert exc_info.value.status_code == 200
     assert "malformed" in exc_info.value.body_excerpt
@@ -270,6 +271,6 @@ async def test_add_comment_rejects_non_positive_task_id(
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        await add_comment(task_id=0, text="hi")
+        await add_comment(task_id=0, content="hi")
     with pytest.raises(ValidationError):
-        await add_comment(task_id=-1, text="hi")
+        await add_comment(task_id=-1, content="hi")

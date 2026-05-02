@@ -208,7 +208,7 @@ async def test_add_subtask_happy_path(_inject_client: KanbanToolClient) -> None:
         route = router.post(SUBTASKS_URL).mock(
             return_value=httpx.Response(201, json=response_payload)
         )
-        subtask = await add_subtask(task_id=TASK_ID, title="Draft tests")
+        subtask = await add_subtask(task_id=TASK_ID, name="Draft tests")
 
     assert subtask.id == 17
     assert subtask.name == "Draft tests"
@@ -229,7 +229,7 @@ async def test_add_subtask_body_has_no_envelope(_inject_client: KanbanToolClient
         route = router.post(SUBTASKS_URL).mock(
             return_value=httpx.Response(201, json={"id": 1, "name": "x", "task_id": TASK_ID})
         )
-        await add_subtask(task_id=TASK_ID, title="x")
+        await add_subtask(task_id=TASK_ID, name="x")
 
     body = _request_body(route)
     assert "subtask" not in body
@@ -244,7 +244,7 @@ async def test_add_subtask_minimal_response(_inject_client: KanbanToolClient) ->
         router.post(SUBTASKS_URL).mock(
             return_value=httpx.Response(201, json={"id": 1, "name": "x"})
         )
-        subtask = await add_subtask(task_id=TASK_ID, title="x")
+        subtask = await add_subtask(task_id=TASK_ID, name="x")
 
     assert subtask.id == 1
     assert subtask.name == "x"
@@ -263,7 +263,7 @@ async def test_add_subtask_422_raises_validation_error(
     with respx.mock() as router:
         router.post(SUBTASKS_URL).mock(return_value=httpx.Response(422, json=error_body))
         with pytest.raises(KanbanToolValidationError) as exc_info:
-            await add_subtask(task_id=TASK_ID, title="")
+            await add_subtask(task_id=TASK_ID, name="")
 
     err = exc_info.value
     assert err.status_code == 422
@@ -277,7 +277,7 @@ async def test_add_subtask_url_shape(_inject_client: KanbanToolClient) -> None:
         route = router.post(SUBTASKS_URL).mock(
             return_value=httpx.Response(201, json={"id": 1, "name": "x"})
         )
-        await add_subtask(task_id=TASK_ID, title="x")
+        await add_subtask(task_id=TASK_ID, name="x")
 
     request = route.calls.last.request
     assert request.method == "POST"
@@ -288,7 +288,7 @@ async def test_add_subtask_404_raises_http_error(_inject_client: KanbanToolClien
     with respx.mock() as router:
         router.post(SUBTASKS_URL).mock(return_value=httpx.Response(404, text="task not found"))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_subtask(task_id=TASK_ID, title="x")
+            await add_subtask(task_id=TASK_ID, name="x")
     assert exc_info.value.status_code == 404
     assert not isinstance(exc_info.value, KanbanToolValidationError)
 
@@ -297,7 +297,7 @@ async def test_add_subtask_500_raises_http_error(_inject_client: KanbanToolClien
     with respx.mock() as router:
         router.post(SUBTASKS_URL).mock(return_value=httpx.Response(500, text="server exploded"))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_subtask(task_id=TASK_ID, title="x")
+            await add_subtask(task_id=TASK_ID, name="x")
     assert exc_info.value.status_code == 500
 
 
@@ -312,7 +312,7 @@ async def test_add_subtask_malformed_response_raises_http_error(
             return_value=httpx.Response(201, json={"name": "no-id"}),
         )
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await add_subtask(task_id=TASK_ID, title="x")
+            await add_subtask(task_id=TASK_ID, name="x")
 
     assert exc_info.value.status_code == 200
     assert "malformed" in exc_info.value.body_excerpt
