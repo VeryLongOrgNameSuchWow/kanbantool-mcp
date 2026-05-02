@@ -211,6 +211,73 @@ async def test_create_task_422_non_json_body_falls_back(
     assert err.status_code == 422
     assert err.field_errors == {}
     assert "<html>" in err.body_excerpt
+    # Surface the body excerpt in the rendered string when field_errors is
+    # empty, so the LLM has a signal to debug from.
+    rendered = str(err)
+    assert "<html>" in rendered
+
+
+async def test_create_task_422_flat_message_shape_parsed(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """Some endpoints (e.g. ``create_task`` with malformed enums like
+    ``priority="high"``) return a flat ``{"status": 422, "message": [...]}``
+    body instead of the Rails-idiomatic ``{"errors": {field: [msg, ...]}}``
+    envelope. The flat shape carries no per-field attribution but still has
+    actionable detail; surface it under a synthetic ``"message"`` key so the
+    rendered ``__str__`` shows the LLM what actually went wrong.
+
+    Live wire shape (verified against rynbou.kanbantool.com):
+        POST /tasks.json with priority="high" →
+        ``{"status":422,"message":["Priority is not a number"]}``"""
+    with respx.mock() as router:
+        router.post(TASKS_URL).mock(
+            return_value=httpx.Response(
+                422, json={"status": 422, "message": ["Priority is not a number"]}
+            ),
+        )
+        with pytest.raises(KanbanToolValidationError) as exc_info:
+            await create_task(name="x", board_id=7)
+
+    err = exc_info.value
+    assert err.status_code == 422
+    assert err.field_errors == {"message": ["Priority is not a number"]}
+    rendered = str(err)
+    assert "Priority is not a number" in rendered
+
+
+async def test_create_task_422_flat_message_string_form(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """Tolerate the ``message`` value being a single string instead of a list
+    — observed on at least one endpoint variant; treat as a one-element list."""
+    with respx.mock() as router:
+        router.post(TASKS_URL).mock(
+            return_value=httpx.Response(422, json={"status": 422, "message": "Tags is malformed"}),
+        )
+        with pytest.raises(KanbanToolValidationError) as exc_info:
+            await create_task(name="x", board_id=7)
+    assert exc_info.value.field_errors == {"message": ["Tags is malformed"]}
+
+
+async def test_create_task_422_unknown_shape_surfaces_body_excerpt(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """A 422 with a JSON body that matches NEITHER known shape leaves
+    ``field_errors`` empty but the rendered ``__str__`` must still surface
+    the (scrubbed) body so the LLM has something to debug from. Pre-fix the
+    LLM only saw 'rejected as invalid (422)' with zero detail."""
+    with respx.mock() as router:
+        router.post(TASKS_URL).mock(
+            return_value=httpx.Response(422, json={"unexpected_envelope": True, "code": "X42"}),
+        )
+        with pytest.raises(KanbanToolValidationError) as exc_info:
+            await create_task(name="x", board_id=7)
+
+    err = exc_info.value
+    assert err.field_errors == {}
+    rendered = str(err)
+    assert "unexpected_envelope" in rendered or "X42" in rendered
 
 
 async def test_create_task_422_body_scrubs_bearer_token(

@@ -32,9 +32,19 @@ def _scrub_secrets(text: str) -> str:
 
 
 def _parse_field_errors(body: str) -> dict[str, list[str]]:
-    """Parse a 422 body's Rails-idiomatic ``{"errors": {field: [msg, ...]}}``
-    envelope. Returns an empty dict if the body is not JSON, the envelope is
-    missing, or the values are not the expected list-of-strings shape — the
+    """Parse a 422 body's error envelope. The Kanban Tool API uses two shapes
+    interchangeably depending on the endpoint and the failure mode:
+
+    1. Rails-idiomatic, per-field: ``{"errors": {field: [msg, ...]}}`` —
+       e.g. ``add_comment`` returns ``{"errors": {"content": ["can't be blank"]}}``.
+    2. Flat ``{"status": 422, "message": [msg, ...]}`` — e.g. ``create_task``
+       with a malformed enum like ``priority="high"`` returns
+       ``{"status": 422, "message": ["Priority is not a number"]}``. The flat
+       shape carries no field attribution; surfaced under a synthetic
+       ``"message"`` key so callers can still render it.
+
+    Returns an empty dict if the body is not JSON, neither envelope is
+    present, or the values are not the expected list-of-strings shape — the
     caller still surfaces the raw (scrubbed) excerpt in that case.
 
     Both message strings and field keys are run through ``_scrub_secrets`` so
@@ -48,18 +58,27 @@ def _parse_field_errors(body: str) -> dict[str, list[str]]:
     if not isinstance(decoded, dict):
         return {}
     errors = decoded.get("errors")
-    if not isinstance(errors, dict):
-        return {}
-    parsed: dict[str, list[str]] = {}
-    for field, messages in errors.items():
-        if not isinstance(field, str):
-            continue
-        scrubbed_field = _scrub_secrets(field)
-        if isinstance(messages, list):
-            parsed[scrubbed_field] = [_scrub_secrets(str(m)) for m in messages]
-        else:
-            parsed[scrubbed_field] = [_scrub_secrets(str(messages))]
-    return parsed
+    if isinstance(errors, dict):
+        parsed: dict[str, list[str]] = {}
+        for field, messages in errors.items():
+            if not isinstance(field, str):
+                continue
+            scrubbed_field = _scrub_secrets(field)
+            if isinstance(messages, list):
+                parsed[scrubbed_field] = [_scrub_secrets(str(m)) for m in messages]
+            else:
+                parsed[scrubbed_field] = [_scrub_secrets(str(messages))]
+        if parsed:
+            return parsed
+    # Flat ``{"status": 422, "message": [...]}`` shape — coerce ``message`` into
+    # a single-key dict so the renderer gives the LLM something concrete to
+    # read, even without per-field attribution.
+    flat_messages = decoded.get("message")
+    if isinstance(flat_messages, list) and flat_messages:
+        return {"message": [_scrub_secrets(str(m)) for m in flat_messages]}
+    if isinstance(flat_messages, str) and flat_messages:
+        return {"message": [_scrub_secrets(flat_messages)]}
+    return {}
 
 
 def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
