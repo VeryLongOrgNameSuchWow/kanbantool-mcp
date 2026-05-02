@@ -588,7 +588,7 @@ async def update_subtask(
     *,
     name: str | None = None,
     is_completed: bool | None = None,
-    assigned_user_id: int | None = None,
+    assigned_user_id: Annotated[int, Field(ge=1)] | None = None,
 ) -> Subtask:
     """Partial update of an existing subtask. Returns the updated ``Subtask``.
 
