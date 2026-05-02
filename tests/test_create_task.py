@@ -149,13 +149,15 @@ async def test_create_task_legacy_assignees_kwarg_rejected(
     _inject_client: KanbanToolClient,
 ) -> None:
     """The legacy ``assignees=[int]`` kwarg has been removed (the API silently
-    ignored it — see #62). Calling with it must raise ``TypeError`` before any
-    HTTP traffic, so the LLM gets an immediate signal to migrate."""
+    ignored it — see #62). Calling with it must reject before any HTTP traffic,
+    so the LLM gets an immediate signal to migrate. With ``@validate_call``
+    enabled (M7-B), pydantic raises ``ValidationError`` (a ``ValueError``
+    subclass) for unexpected kwargs rather than Python's bare ``TypeError``."""
     # Route through a kwargs dict typed as ``dict[str, Any]`` so the static
     # type-checker doesn't flag the removed kwarg — we're deliberately
     # exercising runtime rejection.
     legacy_kwargs: dict[str, Any] = {"name": "x", "board_id": 2, "assignees": [11]}
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         await create_task(**legacy_kwargs)
 
 

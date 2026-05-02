@@ -197,20 +197,25 @@ async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
 
 
 @mcp.tool
-async def get_task(task_id: int) -> Task:
+@validate_call
+async def get_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     """Fetch one task by id. Returns a Task with subtask/comment counts,
     total tracked time, and inline ``subtasks``.
 
     Subtasks live on ``Task.subtasks`` directly — no extra round-trip needed
     (use ``list_subtasks`` only when you want just the list and not the rest
     of the task).
+
     Raises ``KanbanToolHTTPError(404)`` if the task is unknown or inaccessible."""
     data = await _get_client().request("GET", f"tasks/{task_id}")
     return _decode(Task, data, label="task")
 
 
 @mcp.tool
-async def recent_changes(board_id: int, since: datetime | None = None) -> list[ChangelogEntry]:
+@validate_call
+async def recent_changes(
+    board_id: Annotated[int, Field(ge=1)], since: datetime | None = None
+) -> list[ChangelogEntry]:
     """Fetch a board's changelog (Kanban Tool has no webhooks; poll this instead).
 
     Always pass ``since`` (timestamp of the last entry seen) on follow-up calls —
@@ -229,11 +234,12 @@ _SEARCH_TASKS_MAX_LIMIT = 50
 
 
 @mcp.tool
+@validate_call
 async def search_tasks(
     query: str,
-    board_id: int | None = None,
-    limit: int = 25,
-    page: int = 1,
+    board_id: Annotated[int, Field(ge=1)] | None = None,
+    limit: Annotated[int, Field(ge=1)] = 25,
+    page: Annotated[int, Field(ge=1)] = 1,
 ) -> list[Task]:
     """Search tasks across boards using Kanban Tool's query DSL.
 
@@ -274,13 +280,14 @@ async def search_tasks(
 
 
 @mcp.tool
+@validate_call
 async def create_task(
     name: str,
-    board_id: int,
+    board_id: Annotated[int, Field(ge=1)],
     description: str | None = None,
-    lane_id: int | None = None,
+    lane_id: Annotated[int, Field(ge=1)] | None = None,
     position: int | None = None,
-    assigned_user_id: int | None = None,
+    assigned_user_id: Annotated[int, Field(ge=1)] | None = None,
     due_date: str | None = None,
     priority: int | str | None = None,
     tags: str | None = None,
@@ -390,20 +397,21 @@ async def _patch_task(
 
 
 @mcp.tool
+@validate_call
 async def update_task(
-    task_id: int,
+    task_id: Annotated[int, Field(ge=1)],
     name: str | None = None,
     description: str | None = None,
-    board_id: int | None = None,
-    lane_id: int | None = None,
-    swimlane_id: int | None = None,
+    board_id: Annotated[int, Field(ge=1)] | None = None,
+    lane_id: Annotated[int, Field(ge=1)] | None = None,
+    swimlane_id: Annotated[int, Field(ge=1)] | None = None,
     position: int | None = None,
     priority: int | str | None = None,
     color: str | None = None,
     due_date: str | None = None,
     start_date: str | None = None,
     tags: str | None = None,
-    assigned_user_id: int | None = None,
+    assigned_user_id: Annotated[int, Field(ge=1)] | None = None,
 ) -> Task:
     """Partially update a task's fields. Only the kwargs you pass are sent;
     ``None`` means *omit*, not *clear* (the API ignores nulls, doesn't wipe).
@@ -434,10 +442,11 @@ async def update_task(
 
 
 @mcp.tool
+@validate_call
 async def move_task(
-    task_id: int,
-    column_id: int | None = None,
-    swimlane_id: int | None = None,
+    task_id: Annotated[int, Field(ge=1)],
+    column_id: Annotated[int, Field(ge=1)] | None = None,
+    swimlane_id: Annotated[int, Field(ge=1)] | None = None,
     position: int | None = None,
 ) -> Task:
     """Move a task between columns, swimlanes, or positions on its board.
@@ -458,7 +467,8 @@ async def move_task(
 
 
 @mcp.tool
-async def archive_task(task_id: int) -> Task:
+@validate_call
+async def archive_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     """Archive a task. Returns the updated ``Task`` (caller can confirm
     ``is_archived=True``).
 
@@ -539,7 +549,8 @@ async def delete_comment(
 
 
 @mcp.tool
-async def list_subtasks(task_id: int) -> list[Subtask]:
+@validate_call
+async def list_subtasks(task_id: Annotated[int, Field(ge=1)]) -> list[Subtask]:
     """List subtasks on a task — id, name, completion state, position.
 
     Subtasks are returned inline on ``Task.subtasks`` whenever you fetch a
@@ -551,7 +562,8 @@ async def list_subtasks(task_id: int) -> list[Subtask]:
 
 
 @mcp.tool
-async def add_subtask(task_id: int, name: str) -> Subtask:
+@validate_call
+async def add_subtask(task_id: Annotated[int, Field(ge=1)], name: str) -> Subtask:
     """Add a subtask to a task. Returns the created ``Subtask``.
 
     ``name`` is the human-readable label. Empty ``name`` typically raises
@@ -576,7 +588,7 @@ async def update_subtask(
     *,
     name: str | None = None,
     is_completed: bool | None = None,
-    assigned_user_id: int | None = None,
+    assigned_user_id: Annotated[int, Field(ge=1)] | None = None,
 ) -> Subtask:
     """Partial update of an existing subtask. Returns the updated ``Subtask``.
 
