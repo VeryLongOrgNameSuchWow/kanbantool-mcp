@@ -79,10 +79,10 @@ Add to your MCP client's `mcp.json`:
 | `update_task` | Partial update of an existing task; only kwargs the caller passes are sent. `None` means *omit*, not *clear*. | `task_id`, `name?`, `description?`, `priority?`, ... |
 | `move_task` | Move a task between columns, swimlanes, or positions. At least one target must be set. | `task_id`, `column_id?`, `swimlane_id?`, `position?` |
 | `archive_task` | Archive a task. Idempotent. | `task_id` |
-| `add_comment` | Post a comment on a task. | `task_id`, `text` |
+| `add_comment` | Post a comment on a task. | `task_id`, `content` |
 | `delete_comment` | Soft-delete a comment on a task. Returns the deleted comment with `deleted_at` populated. The API has no edit endpoint — delete and re-post if you need to change a comment. | `task_id`, `comment_id` |
 | `list_subtasks` | List subtasks attached to a task. | `task_id` |
-| `add_subtask` | Add a subtask to a task. | `task_id`, `title` |
+| `add_subtask` | Add a subtask to a task. | `task_id`, `name` |
 | `update_subtask` | Partial update of an existing subtask — mark complete, rename, change assignee. `None` kwargs are omitted. | `subtask_id`, `name?`, `is_completed?`, `assigned_user_id?` |
 | `delete_subtask` | Soft-delete a subtask. Returns the deleted subtask with `deleted_at` populated. | `subtask_id` |
 | `reorder_subtasks` | Reorder all subtasks under a task. `ids` must include the full set in the desired order. | `task_id`, `ids: list[int]` |
@@ -128,7 +128,7 @@ Assistant: (calls list_boards)             -> resolves "Engineering" -> id 4217
               priority="high")             -> task id 88231 created
            (calls add_comment
               task_id=88231,
-              text="Picking this up today.")
+              content="Picking this up today.")
 
            Created "Fix login bug" (id 88231) in Engineering at high priority,
            and added your comment.

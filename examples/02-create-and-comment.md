@@ -51,7 +51,7 @@ annotated with reproduction steps. The assistant resolves the board, calls
 ```text
 > add_comment(
     task_id=50240,
-    text="Steps to reproduce:\n1. Log out.\n2. Visit /login on Safari 17.\n3. Submit valid creds — page reloads with no session cookie set.\nExpected: redirect to /dashboard.",
+    content="Steps to reproduce:\n1. Log out.\n2. Visit /login on Safari 17.\n3. Submit valid creds — page reloads with no session cookie set.\nExpected: redirect to /dashboard.",
   )
 ```
 
