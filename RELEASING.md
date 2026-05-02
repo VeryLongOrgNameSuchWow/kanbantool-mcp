@@ -64,18 +64,25 @@ release-please reads merge-commit titles on `main`. Pattern:
 |----------|-------|----------------------------|
 | `feat` | minor | `### Features` |
 | `fix` | patch | `### Bug Fixes` |
-| `perf` | none[*] | `### Performance Improvements` |
-| `refactor` | none[*] | `### Refactors` |
-| `docs` | none[*] | `### Documentation` |
-| `chore` | none | `### Miscellaneous Chores` |
-| `ci` / `build` / `test` | none | `### Continuous Integration` / `### Build System` / `### Tests` |
+| `perf` | patch | `### Performance Improvements` |
+| `docs` | patch | `### Documentation` |
+| `refactor` | none[*] | (omitted) |
+| `chore` | none | (omitted) |
+| `ci` / `build` / `test` | none | (omitted) |
 
-[*] release-please-action's default Python release-type only bumps on
-`feat:` (minor) and `fix:` (patch). Other types are recognised — they
-appear in the CHANGELOG when a release IS cut by an accompanying
-feat/fix in the same window — but on their own they don't trigger a
-release PR. If a stretch of commits is `refactor:`/`chore:`/`docs:`
-only and you want them tagged anyway, see "Forcing a release" below.
+[*] release-please-action's default Python release-type bumps on
+`feat:` (minor), `fix:` (patch), `docs:` (patch), and `perf:` (patch).
+The other types (`refactor:`, `chore:`, `ci:`, `build:`, `test:`) are
+recognised in commit messages but don't trigger a release PR. They also
+don't appear in CHANGELOG by default — if you want them recorded, lift
+them into a `fix:` (when behaviour-affecting) or use the `Release-As:`
+escape hatch (see "Forcing a release" below) to tag a milestone-style
+stretch.
+
+The `refactor: doesn't bump` rule is what tripped us cutting v0.7.0
+from M7 — three commits (`refactor:` + `test:` + `chore:`), zero auto-
+bump candidates. v0.7.0 ended up via a `Release-As:` footer on an
+empty commit. v0.7.1 then bumped automatically off a `docs:` PR.
 
 A `!` after the type or a `BREAKING CHANGE:` footer triggers a major
 bump (e.g. `feat!: drop py3.10` or `fix(server): swap error
