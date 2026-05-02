@@ -53,16 +53,24 @@ class KanbanToolValidationError(KanbanToolHTTPError):
 
     def __str__(self) -> str:
         base = super().__str__()
-        if not self.field_errors:
-            return base
-        rendered = "; ".join(
-            f"{field}: {', '.join(messages)}" for field, messages in self.field_errors.items()
-        )
-        # Belt-and-suspenders: scrub again here so direct construction of the
-        # exception with un-scrubbed input cannot leak a bearer token through
-        # the rendered string. The client construction path scrubs on the way
-        # in; this is a second line of defense for callers that bypass it.
-        return _BEARER_PATTERN.sub("Bearer ***", f"{base} {rendered}")
+        if self.field_errors:
+            rendered = "; ".join(
+                f"{field}: {', '.join(messages)}" for field, messages in self.field_errors.items()
+            )
+            # Belt-and-suspenders: scrub again here so direct construction of
+            # the exception with un-scrubbed input cannot leak a bearer token
+            # through the rendered string. The client construction path scrubs
+            # on the way in; this is a second line of defense for callers that
+            # bypass it.
+            return _BEARER_PATTERN.sub("Bearer ***", f"{base} {rendered}")
+        # Fall back to the (already-scrubbed) excerpt when the API returned a
+        # 422 body whose shape ``_parse_field_errors`` doesn't recognise. The
+        # excerpt is the LLM's only signal in that case — surfacing just the
+        # bare "rejected as invalid (422)" message strands the caller with no
+        # information about what went wrong.
+        if self.body_excerpt:
+            return _BEARER_PATTERN.sub("Bearer ***", f"{base} body: {self.body_excerpt}")
+        return base
 
 
 class KanbanToolTransportError(KanbanToolError):
