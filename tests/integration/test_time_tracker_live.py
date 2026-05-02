@@ -77,6 +77,10 @@ async def test_start_timer_returns_running_tracker(
     timer = await start_timer(task_id=task_id, board_id=board_id)
     try:
         assert isinstance(timer, TimeTracker)
+        # Direct timer endpoints always include ``id``; only inline-on-Task
+        # entries from ``/tasks/{id}.json`` omit it (which is why ``id`` is
+        # typed ``int | None``).
+        assert timer.id is not None
         assert timer.id > 0
         assert timer.task_id == task_id
         assert timer.board_id == board_id
@@ -86,7 +90,8 @@ async def test_start_timer_returns_running_tracker(
         # Always clean up — even if the assertions failed, the timer is
         # already on the wire and would persist on the test account.
         with contextlib.suppress(Exception):
-            await delete_timer(timer.id)
+            if timer.id is not None:
+                await delete_timer(timer.id)
 
 
 async def test_stop_timer_sets_ended_at(
@@ -98,6 +103,7 @@ async def test_stop_timer_sets_ended_at(
     task_id, board_id = throwaway_task
 
     started = await start_timer(task_id=task_id, board_id=board_id)
+    assert started.id is not None
     try:
         stopped = await stop_timer(timer_id=started.id)
 
@@ -123,6 +129,7 @@ async def test_delete_timer_returns_none(
     task_id, board_id = throwaway_task
 
     timer = await start_timer(task_id=task_id, board_id=board_id)
+    assert timer.id is not None
     result = await delete_timer(timer.id)
 
     assert result is None
@@ -143,6 +150,7 @@ async def test_list_my_timers_returns_typed_list(
     task_id, board_id = throwaway_task
 
     started = await start_timer(task_id=task_id, board_id=board_id)
+    assert started.id is not None
     try:
         timers = await list_my_timers()
 

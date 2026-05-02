@@ -309,6 +309,10 @@ async def test_list_my_timers_returns_typed_list(
     assert all(isinstance(t, TimeTracker) for t in timers)
     for t in timers:
         # Critical fields the model surfaces; the rest are optional.
+        # ``users/current.json``'s timer list always carries ``id``; only
+        # inline-on-Task entries (from ``/tasks/{id}.json``) omit it, hence
+        # the ``int | None`` model type.
+        assert t.id is not None
         assert t.id > 0
         assert t.user_id is None or isinstance(t.user_id, int)
         # ``is_running`` is the computed-field flag; should be Boolean,
