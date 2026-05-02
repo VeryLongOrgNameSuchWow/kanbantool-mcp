@@ -64,18 +64,50 @@ release-please reads merge-commit titles on `main`. Pattern:
 |----------|-------|----------------------------|
 | `feat` | minor | `### Features` |
 | `fix` | patch | `### Bug Fixes` |
-| `perf` | patch | `### Performance Improvements` |
-| `refactor` | patch | `### Refactors` |
-| `docs` | patch | `### Documentation` |
-| `chore` | none | (omitted unless `!`) |
-| `ci` / `build` / `test` | none | (omitted unless `!`) |
+| `perf` | none[*] | `### Performance Improvements` |
+| `refactor` | none[*] | `### Refactors` |
+| `docs` | none[*] | `### Documentation` |
+| `chore` | none | `### Miscellaneous Chores` |
+| `ci` / `build` / `test` | none | `### Continuous Integration` / `### Build System` / `### Tests` |
 
-A `!` after the type or a `BREAKING CHANGE:` footer triggers a major bump
-(e.g. `feat!: drop py3.10` or `fix(server): swap error code\n\nBREAKING
-CHANGE: clients must handle KanbanToolValidationError now`).
+[*] release-please-action's default Python release-type only bumps on
+`feat:` (minor) and `fix:` (patch). Other types are recognised — they
+appear in the CHANGELOG when a release IS cut by an accompanying
+feat/fix in the same window — but on their own they don't trigger a
+release PR. If a stretch of commits is `refactor:`/`chore:`/`docs:`
+only and you want them tagged anyway, see "Forcing a release" below.
+
+A `!` after the type or a `BREAKING CHANGE:` footer triggers a major
+bump (e.g. `feat!: drop py3.10` or `fix(server): swap error
+code\n\nBREAKING CHANGE: clients must handle KanbanToolValidationError
+now`). Pre-1.0, breaking changes can ship as minor or patch per
+[SEMVER.md](SEMVER.md) — the `!` is reserved for the eventual major
+gate.
 
 The `Closes #N` footer is honoured separately by `release.yml`'s
 auto-close step — see "Tag → publish flow" below.
+
+## Forcing a release
+
+If you have a stretch of commits that don't include a `feat:` or `fix:`
+but you still want them shipped under a tagged version (e.g. an M7-style
+"all polish, no new features" milestone), add a `Release-As: x.y.z`
+footer to a single commit on `main`:
+
+```bash
+git commit --allow-empty -m "$(cat <<'EOF'
+chore: trigger v0.7.0 release for accumulated polish
+
+Release-As: 0.7.0
+EOF
+)"
+git push
+```
+
+release-please picks up the footer, opens a release PR at the named
+version, and the rest of the flow is identical to the auto-bump path.
+Pick the version per `SEMVER.md` — minor for substantive cleanup, patch
+for tightening.
 
 ## Manual-cut escape hatch
 
