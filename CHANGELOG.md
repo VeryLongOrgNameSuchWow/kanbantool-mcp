@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.7.1...v0.7.2) (2026-05-02)
+
+
+### Bug Fixes
+
+* **client,exceptions:** surface 422 detail when API uses flat message shape ([#136](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/136)) ([d711e9a](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/d711e9abddbe662e95520b5cad650a299229def7))
+* **models:** widen TimeTracker.id to Optional for inline-on-task shape ([#134](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/134)) ([6967451](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/6967451ac1602b0b619578e4b28fbfeabfed9b77))
+
 ## [0.7.1](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.7.0...v0.7.1) (2026-05-02)
 
 
