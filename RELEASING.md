@@ -84,12 +84,16 @@ from M7 — three commits (`refactor:` + `test:` + `chore:`), zero auto-
 bump candidates. v0.7.0 ended up via a `Release-As:` footer on an
 empty commit. v0.7.1 then bumped automatically off a `docs:` PR.
 
-A `!` after the type or a `BREAKING CHANGE:` footer triggers a major
-bump (e.g. `feat!: drop py3.10` or `fix(server): swap error
+A `!` after the type or a `BREAKING CHANGE:` footer marks a breaking
+change (e.g. `feat!: drop py3.10` or `fix(server): swap error
 code\n\nBREAKING CHANGE: clients must handle KanbanToolValidationError
-now`). Pre-1.0, breaking changes can ship as minor or patch per
-[SEMVER.md](SEMVER.md) — the `!` is reserved for the eventual major
-gate.
+now`). **Pre-1.0** — where we are today — these cut a **minor** bump,
+not a major, because `release-please-config.json` sets
+`bump-minor-pre-major: true`. The major version stays at `0` until the
+project is deliberately graduated to v1.0; the loud "this might break
+you" signal is the minor bump itself, surfaced as a `### BREAKING CHANGES`
+section in the CHANGELOG. **Post-1.0**, the standard SemVer mapping
+applies (`feat!:` → major).
 
 The `Closes #N` footer is honoured separately by `release.yml`'s
 auto-close step — see "Tag → publish flow" below.

@@ -7,7 +7,8 @@
     ".": {
       "package-name": "kanbantool-mcp",
       "version-file": "src/kanbantool_mcp/__init__.py",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true
     }
   }
 }
