@@ -78,6 +78,13 @@ workflow).
   Keep them terse, action-oriented, and accurate. Don't explain
   *what* the code does — explain *when* an agent should reach for
   this tool and what a good argument looks like.
+- The `_SERVER_INSTRUCTIONS` string in `src/kanbantool_mcp/server.py`
+  is the always-loaded mental model surfaced to MCP clients. It's
+  hard-capped at ~150 words. The longer `llms.txt` at the repo root
+  (when present) extends it with quirks and edge cases. **When you
+  add or remove a tool, or change its semantics in a way that
+  contradicts either surface, update both `_SERVER_INSTRUCTIONS`
+  AND `llms.txt`.** They must not drift.
 
 ### CI
 

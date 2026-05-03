@@ -29,7 +29,48 @@ from .models import (
 # it would widen the API for one caller.
 _PAYLOAD_EXCERPT_LIMIT = 200
 
-mcp: FastMCP = FastMCP("kanbantool-mcp")
+# Server-level mental model surfaced to MCP clients. FastMCP forwards this to
+# the LLM as the always-loaded "how to think about this server" preamble, so
+# every tool call benefits from it without paying a per-tool docstring tax.
+#
+# Kept short (~135 words, hard cap ~150) on purpose: the LLM may compress or
+# silently truncate longer instructions, so we earn budget by saying only
+# what isn't already obvious from individual tool docstrings — discovery
+# order, the "me/whoami" handshake, the polling stand-in for webhooks, the
+# one-and-only ``set_custom_field`` exception to the omit-vs-clear rule, and
+# the typed exception ladder. Any longer-form quirks (Rails envelope vs
+# flat-body wire shapes, soft-delete semantics, the search DSL) live in
+# ``llms.txt`` and the per-tool docstrings.
+#
+# CONTRIBUTING: when you add or remove a tool, or change its semantics in a
+# way that contradicts this preamble, update both this string AND
+# ``llms.txt``. The two surfaces must stay in sync.
+_SERVER_INSTRUCTIONS = """\
+Kanban Tool MCP server. Boards hold columns, lanes, tasks, comments, \
+subtasks, time trackers, and 15 custom-field slots per task.
+
+Discovery: start with `list_boards` to find board IDs. To resolve \
+"me"/"myself", call `whoami` (returns the authenticated user). To match a \
+name like "Alice", call `list_board_collaborators(board_id)` then \
+`get_user(id)` to confirm. Use `list_custom_field_definitions(board_id)` \
+to learn what each `custom_field_N` slot means on that board.
+
+Change tracking: Kanban Tool has no webhooks. Poll \
+`recent_changes(board_id, since=...)` sparingly (30-120s cadence). Always \
+pass `since` after the first call.
+
+`None` means "omit, don't clear" on `update_task` / `move_task` / \
+`update_subtask` — the API ignores nulls. The one exception: \
+`set_custom_field(value=None)` sends a literal null and CLEARS the slot.
+
+Destructive tools (`delete_*`, `archive_task`) carry \
+`destructiveHint: True`. Errors flow through typed `KanbanToolError` \
+subclasses (`KanbanToolPermissionError` for 401/403, \
+`KanbanToolValidationError` for 422 with `field_errors`, \
+`KanbanToolHTTPError` otherwise, `KanbanToolTransportError` on transport \
+failure)."""
+
+mcp: FastMCP = FastMCP("kanbantool-mcp", instructions=_SERVER_INSTRUCTIONS)
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
