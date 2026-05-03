@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
+import os
 import re
+import sys
 from typing import Any
 
 import httpx
@@ -37,6 +40,78 @@ _RETRY_AFTER_CAP_SECONDS = 5.0
 _RETRYABLE_STATUS_CODES = frozenset({429, *range(500, 600)})
 
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+\S+")
+
+# Per-request logging is opt-in via ``KANBANTOOL_LOG_LEVEL``.
+#
+# - Default (env unset): NullHandler — silent. No log output, no overhead
+#   beyond a single ``isEnabledFor`` check per request.
+# - ``KANBANTOOL_LOG_LEVEL=INFO``: one stderr line per request:
+#   ``→ GET users/current.json``.
+# - ``KANBANTOOL_LOG_LEVEL=DEBUG``: that, plus a response line with
+#   status + scrubbed body excerpt: ``← GET users/current.json [200] {...}``.
+#
+# Output goes to ``stderr`` (not stdout) because the MCP transport reserves
+# stdout for JSON-RPC framing — any stray write there corrupts the stream
+# and the client disconnects.
+#
+# Body excerpts pass through ``_scrub_secrets`` (same posture as the typed
+# exceptions) so a token leaked inside a JSON envelope can't survive into
+# log output. Truncated to ``_BODY_EXCERPT_LIMIT`` chars to keep lines
+# scannable.
+#
+# Invalid level values silently fall through to the NullHandler default.
+# We never break the server because someone typo'd the env var.
+_LOG_LEVEL_ENV = "KANBANTOOL_LOG_LEVEL"
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+
+logger = logging.getLogger("kanbantool_mcp.client")
+
+
+_KANBANTOOL_HANDLER_MARK = "_kanbantool_stream_handler"
+
+
+def _configure_logging_from_env() -> None:
+    """Wire up an opt-in stderr handler if ``KANBANTOOL_LOG_LEVEL`` is set
+    to a valid Python ``logging`` level name. Otherwise restore the silent
+    default (NullHandler only, propagate=True, no level override).
+
+    Idempotent: calling twice does not stack handlers. Resetting to the
+    silent default on unset/invalid env makes the function safe to re-run
+    after ``importlib.reload`` in tests."""
+    # First, undo any previous configuration this function may have applied.
+    # Keeps default-state reproducible — ``reload(client)`` after unsetting
+    # the env should leave the logger looking exactly like a fresh import.
+    for existing in list(logger.handlers):
+        if getattr(existing, _KANBANTOOL_HANDLER_MARK, False):
+            logger.removeHandler(existing)
+    logger.propagate = True
+    logger.setLevel(logging.NOTSET)
+
+    # The NullHandler suppresses "no handlers could be found" warnings if
+    # an embedding application uses logging without configuring our logger.
+    # Stdlib best-practice for libraries:
+    # https://docs.python.org/3/howto/logging.html#configuring-logging-for-a-library
+    if not any(isinstance(h, logging.NullHandler) for h in logger.handlers):
+        logger.addHandler(logging.NullHandler())
+
+    raw = os.environ.get(_LOG_LEVEL_ENV, "").strip().upper()
+    if raw not in _VALID_LOG_LEVELS:
+        return
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(raw)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    # Marker so the cleanup pass above can identify our own handlers
+    # without inspecting the embedding app's logging config.
+    setattr(handler, _KANBANTOOL_HANDLER_MARK, True)
+    logger.addHandler(handler)
+    logger.setLevel(raw)
+    # Don't propagate to root once configured — embedding apps likely have
+    # their own root handler and we'd duplicate every line there.
+    logger.propagate = False
+
+
+_configure_logging_from_env()
 
 
 def _wrap_transport_error(error: httpx.TransportError) -> KanbanToolTransportError:
@@ -226,6 +301,14 @@ class KanbanToolClient:
         if not normalized.endswith(".json"):
             normalized = f"{normalized}.json"
 
+        # Opt-in via KANBANTOOL_LOG_LEVEL (no-op on the default NullHandler).
+        # Logged BEFORE any retry so the log shows the LLM-issued intent,
+        # not the eventual outcome. Gated behind isEnabledFor for symmetry
+        # with the DEBUG path — saves the .upper() allocation on the silent
+        # default. (The cost is microscopic; the gate is mostly aesthetic.)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("→ %s %s", method.upper(), normalized)
+
         try:
             response = await self._http.request(method, normalized, **kwargs)
         except httpx.TransportError:
@@ -244,6 +327,25 @@ class KanbanToolClient:
                     response = await self._http.request(method, normalized, **kwargs)
                 except httpx.TransportError as transport_error:
                     raise _wrap_transport_error(transport_error) from transport_error
+
+        # DEBUG-only: include the response status + scrubbed body excerpt so
+        # the user can see WHAT the API returned without re-issuing the call.
+        # Guarded behind isEnabledFor so production (NullHandler) doesn't pay
+        # for the body read + scrub on every request.
+        #
+        # ``repr()`` the excerpt so control chars (\r\n, ANSI escapes like
+        # \x1b[2J that clear the terminal) can't forge log lines or hijack
+        # the operator's terminal. The 200-char cap bounds the attack
+        # surface, but escaping is the actual fix.
+        if logger.isEnabledFor(logging.DEBUG):
+            excerpt = _scrub_secrets(response.text)[:_BODY_EXCERPT_LIMIT]
+            logger.debug(
+                "← %s %s [%d] %s",
+                method.upper(),
+                normalized,
+                response.status_code,
+                repr(excerpt),
+            )
 
         _raise_for_status(response, method, normalized)
 
