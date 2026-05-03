@@ -18,13 +18,21 @@ matches a specific shape down to the last key".
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from kanbantool_mcp import server
 
 
+# Typed as ``dict[str, Any]`` (not ``dict[str, FunctionTool]``) because
+# importing ``FunctionTool`` from ``fastmcp.tools.function_tool`` would
+# couple the tests to a private import path; ``Any`` lets ty resolve the
+# ``.annotations`` / ``.output_schema`` attribute accesses below without
+# a fragile direct import that ``fastmcp`` reorganises between minor
+# releases.
 @pytest.fixture
-def registered_tools() -> dict[str, object]:
+def registered_tools() -> dict[str, Any]:
     """All tools registered on the module-level FastMCP server, indexed
     by tool name. Uses ``mcp.list_tools()`` (the supported public API for
     enumerating registered ``FunctionTool`` objects in FastMCP 3.x)."""
@@ -34,7 +42,7 @@ def registered_tools() -> dict[str, object]:
     return {t.name: t for t in tools}
 
 
-def test_every_tool_has_annotations(registered_tools: dict[str, object]) -> None:
+def test_every_tool_has_annotations(registered_tools: dict[str, Any]) -> None:
     """Every ``@mcp.tool`` should declare at least one of the safety hints
     so MCP clients (and the LLM behind them) can reason about the tool's
     side effects without reading the implementation."""
@@ -70,7 +78,7 @@ def test_every_tool_has_annotations(registered_tools: dict[str, object]) -> None
     ],
 )
 def test_computed_fields_surface_in_output_schema(
-    registered_tools: dict[str, object],
+    registered_tools: dict[str, Any],
     tool_name: str,
     expected_property: str,
 ) -> None:
@@ -102,7 +110,7 @@ def test_computed_fields_surface_in_output_schema(
     ],
 )
 def test_list_returning_tools_use_wrap_envelope(
-    registered_tools: dict[str, object],
+    registered_tools: dict[str, Any],
     tool_name: str,
 ) -> None:
     """MCP requires ``output_schema`` be an object at the top level. List
@@ -127,7 +135,7 @@ def test_list_returning_tools_use_wrap_envelope(
 
 
 def test_delete_timer_output_schema_describes_null(
-    registered_tools: dict[str, object],
+    registered_tools: dict[str, Any],
 ) -> None:
     """``delete_timer`` returns ``None`` (the API responds with an empty
     body). We don't pin ``output_schema=`` on it — FastMCP auto-derives a
@@ -143,21 +151,21 @@ def test_delete_timer_output_schema_describes_null(
 
 
 def test_destructive_tools_advertise_destructive_hint(
-    registered_tools: dict[str, object],
+    registered_tools: dict[str, Any],
 ) -> None:
     """The four destructive tools (the ones that delete or archive
     server-side records) must set ``destructiveHint=True`` so MCP clients
     can route them through extra confirmation."""
     destructive = {"archive_task", "delete_comment", "delete_subtask", "delete_timer"}
     for name in destructive:
-        ann = registered_tools[name].annotations  # type: ignore[attr-defined]
+        ann = registered_tools[name].annotations
         assert ann.destructiveHint is True, (
             f"{name} must declare destructiveHint=True (got {ann.destructiveHint!r})"
         )
 
 
 def test_read_tools_advertise_readonly_hint(
-    registered_tools: dict[str, object],
+    registered_tools: dict[str, Any],
 ) -> None:
     """Read tools must set ``readOnlyHint=True``. This is the strongest
     available signal that the LLM can call the tool without confirmation."""
@@ -176,25 +184,27 @@ def test_read_tools_advertise_readonly_hint(
         "list_my_timers",
     }
     for name in read_only:
-        ann = registered_tools[name].annotations  # type: ignore[attr-defined]
+        ann = registered_tools[name].annotations
         assert ann.readOnlyHint is True, (
             f"{name} must declare readOnlyHint=True (got {ann.readOnlyHint!r})"
         )
 
 
-def _resolve_object_properties(schema: dict[str, object]) -> dict[str, object]:
+def _resolve_object_properties(schema: dict[str, Any]) -> dict[str, Any]:
     """Return the ``properties`` dict for an object schema, following one
     level of ``$ref`` if the top-level schema is a reference. Single-model
     return types resolve cleanly; the ``$defs``-only case shouldn't happen
     here but the helper handles it defensively."""
-    if isinstance(schema.get("properties"), dict):
-        return schema["properties"]  # type: ignore[return-value]
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        return properties
     ref = schema.get("$ref")
     if isinstance(ref, str) and ref.startswith("#/$defs/"):
         defs = schema.get("$defs", {})
-        target = defs.get(ref.removeprefix("#/$defs/"), {}) if isinstance(defs, dict) else {}
-        if isinstance(target, dict):
-            props = target.get("properties", {})
-            if isinstance(props, dict):
-                return props
+        if isinstance(defs, dict):
+            target = defs.get(ref.removeprefix("#/$defs/"), {})
+            if isinstance(target, dict):
+                target_props = target.get("properties", {})
+                if isinstance(target_props, dict):
+                    return target_props
     return {}
