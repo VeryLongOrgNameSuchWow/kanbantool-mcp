@@ -20,7 +20,51 @@ from .exceptions import (
 _BODY_EXCERPT_LIMIT = 200
 _RETRY_BACKOFF_SECONDS = 0.5
 
+# Retry policy for transient HTTP responses on idempotent reads. GET-only on
+# purpose — POST/PUT/PATCH/DELETE are NOT retried even on 429/5xx, because the
+# Kanban Tool API has no idempotency-key support, so a transient 503 from a
+# write that *did* land server-side would, on retry, double-create the
+# resource. At-most-once write semantics are the right default; the agent
+# (LLM) can decide whether to re-issue a failed write itself.
+_RETRY_5XX_DELAY_SECONDS = 0.5
+_RETRY_429_DEFAULT_DELAY_SECONDS = 1.0
+# ``Retry-After`` is honored on 429, but capped — a 60s server response would
+# block the LLM for a minute, which is a worse experience than surfacing the
+# typed error and letting the agent decide. Anything longer than this surfaces
+# as ``KanbanToolHTTPError(429)`` immediately.
+_RETRY_AFTER_CAP_SECONDS = 5.0
+_RETRYABLE_STATUS_CODES = frozenset({429, *range(500, 600)})
+
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+\S+")
+
+
+def _retry_delay_for(response: httpx.Response) -> float | None:
+    """Return the delay (seconds) before retrying ``response``, or ``None`` if
+    it should NOT be retried.
+
+    Caller is responsible for the GET-only / one-retry-per-class policy; this
+    helper only inspects the response itself. Returns ``None`` for any 429
+    where ``Retry-After`` exceeds the cap, so the caller surfaces the typed
+    error rather than blocking the LLM for a long server-suggested wait."""
+    status = response.status_code
+    if status not in _RETRYABLE_STATUS_CODES:
+        return None
+    if status == 429:
+        retry_after_raw = response.headers.get("Retry-After")
+        if retry_after_raw is None:
+            return _RETRY_429_DEFAULT_DELAY_SECONDS
+        try:
+            requested = float(retry_after_raw)
+        except ValueError:
+            # ``Retry-After`` may legally be an HTTP-date; we don't parse those
+            # (Kanban Tool's API uses delta-seconds). Fall back to the default
+            # rather than waiting forever.
+            return _RETRY_429_DEFAULT_DELAY_SECONDS
+        if requested > _RETRY_AFTER_CAP_SECONDS:
+            return None
+        return max(0.0, requested)
+    # 5xx
+    return _RETRY_5XX_DELAY_SECONDS
 
 
 def _scrub_secrets(text: str) -> str:
@@ -176,6 +220,22 @@ class KanbanToolClient:
                 raise KanbanToolTransportError(
                     f"Transport error contacting Kanban Tool API: {second_error}"
                 ) from second_error
+
+        # GET-only retry on transient HTTP responses (429 + 5xx). Writes
+        # (POST/PUT/PATCH/DELETE) are intentionally NOT retried — see the
+        # _RETRYABLE_STATUS_CODES rationale at module scope. One retry per
+        # error class: if the second attempt also returns 429/5xx (or any
+        # other error), it propagates through ``_raise_for_status`` below.
+        if method.upper() == "GET":
+            retry_delay = _retry_delay_for(response)
+            if retry_delay is not None:
+                await asyncio.sleep(retry_delay)
+                try:
+                    response = await self._http.request(method, normalized, **kwargs)
+                except httpx.TransportError as transport_error:
+                    raise KanbanToolTransportError(
+                        f"Transport error contacting Kanban Tool API: {transport_error}"
+                    ) from transport_error
 
         _raise_for_status(response, method, normalized)
 
