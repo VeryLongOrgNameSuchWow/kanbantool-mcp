@@ -5,6 +5,22 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+# Accepted truthy spellings for boolean env vars. Kept narrow on purpose:
+# anything outside the set is treated as false so a typo'd value (e.g.
+# ``KANBANTOOL_READ_ONLY=ture``) fails closed (writes still gated) rather
+# than silently disabling the flag. Used for ``KANBANTOOL_READ_ONLY`` (and
+# any future boolean env vars).
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def env_flag(name: str) -> bool:
+    """Parse a boolean env var with the project-wide truthy convention.
+
+    Returns ``True`` only when the value (case-insensitive, surrounding
+    whitespace stripped) is one of ``1``/``true``/``yes``/``on``. Anything
+    else — unset, empty, ``0``, ``false``, a typo — returns ``False``."""
+    return os.environ.get(name, "").strip().lower() in _TRUTHY_ENV_VALUES
+
 
 @dataclass(frozen=True)
 class Config:
