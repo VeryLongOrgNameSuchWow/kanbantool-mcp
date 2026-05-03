@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
 from fastmcp import FastMCP
-from pydantic import BaseModel, Field, ValidationError, validate_call
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, validate_call
 
 from .client import KanbanToolClient
 from .config import Config
@@ -32,6 +33,107 @@ _PAYLOAD_EXCERPT_LIMIT = 200
 mcp: FastMCP = FastMCP("kanbantool-mcp")
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+# --- Output schema helpers --------------------------------------------------
+#
+# Each ``@mcp.tool`` below pins ``output_schema=`` explicitly to the tool's
+# return type so the wire-side contract is locked at the decorator (rather
+# than re-derived by FastMCP from the type hint on every server start).
+# Stable schemas matter because clients can cache them, the JSON Schema is
+# part of the user-visible tool surface, and any future drift in FastMCP's
+# auto-derivation would silently change what callers see.
+#
+# Pydantic ``mode="serialization"`` is required for ``@computed_field`` props
+# (``Task.is_archived``, ``Task.is_blocked``, ``TimeTracker.is_running``) to
+# appear in the generated schema — the default validation-mode schema omits
+# them and the LLM never learns the flags exist.
+#
+# For non-object return types (``list[T]``) MCP requires the top-level
+# ``output_schema`` be an object, so we wrap inside a ``{"result": [...]}``
+# envelope marked with ``x-fastmcp-wrap-result: True``. FastMCP recognises
+# that marker at runtime and unwraps the value before serialising the
+# tool's structured content — so the *transport* shape stays consistent
+# with what FastMCP would have generated automatically.
+
+_T = TypeVar("_T")
+
+
+@dataclass
+class _WrappedResult(Generic[_T]):
+    """Sentinel envelope mirroring FastMCP's internal ``_WrappedResult``.
+
+    Generated only via ``TypeAdapter`` to produce the wrapped-output JSON
+    schema for ``list[T]``-returning tools. Never instantiated at runtime —
+    FastMCP's tool dispatcher does the actual wrapping using the same
+    marker key (``x-fastmcp-wrap-result``).
+    """
+
+    result: _T
+
+
+def _output_schema(return_type: Any) -> dict[str, Any]:
+    """Build the JSON-schema dict to pass as ``output_schema=`` on a tool.
+
+    Always uses pydantic's serialization-mode schema so ``@computed_field``s
+    surface. Wraps non-object types in a ``{"result": ...}`` envelope tagged
+    with ``x-fastmcp-wrap-result: True`` so FastMCP's runtime unwraps it
+    transparently — same shape as FastMCP's own auto-derivation.
+    """
+    base = TypeAdapter(return_type).json_schema(mode="serialization")
+    if base.get("type") == "object" or "properties" in base:
+        return base
+    wrapped = TypeAdapter(_WrappedResult[return_type]).json_schema(mode="serialization")
+    wrapped["x-fastmcp-wrap-result"] = True
+    return wrapped
+
+
+# --- Annotation hint constants ----------------------------------------------
+#
+# MCP's ``ToolAnnotations`` lets a server declare invariants the LLM can use
+# to plan safely (a read tool needs no confirmation; a destructive write
+# does). Each tool below picks one of these constants on its decorator.
+# Constants — not inline dicts — so the classification is grep-able and a
+# future audit can re-verify by looking at the call site alone.
+
+# Read tools — no side effects, safe to call freely. Per the MCP spec,
+# ``destructiveHint`` and ``idempotentHint`` are meaningless when
+# ``readOnlyHint=True``, so leave them unset rather than asserting defaults.
+_READ_ONLY: dict[str, Any] = {"readOnlyHint": True}
+
+# Mutating writes that change real state but don't delete records, and
+# whose repeat invocation would do something different (e.g. creating a
+# second comment, adding a second subtask).
+_WRITE: dict[str, Any] = {
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+}
+
+# Mutating writes whose repeat invocation lands on the same end state
+# (re-archiving an archived task, re-reordering with the same id list).
+_WRITE_IDEMPOTENT: dict[str, Any] = {
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": True,
+}
+
+# Hard-deletes / archives — call out as destructive so the LLM treats the
+# action as confirmation-worthy. ``archive_task`` is also idempotent
+# (overlay below).
+_WRITE_DESTRUCTIVE: dict[str, Any] = {
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": False,
+}
+
+# Archive: destructive AND idempotent (re-archiving an archived task is
+# a harmless no-op server-side).
+_WRITE_DESTRUCTIVE_IDEMPOTENT: dict[str, Any] = {
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": True,
+}
 
 
 def _decode(model: type[_ModelT], data: Any, *, label: str) -> _ModelT:
@@ -85,13 +187,13 @@ def _get_client() -> KanbanToolClient:
     return _client
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY)
 def ping() -> str:
     """Smoke-test the MCP transport. Returns the literal string ``pong``."""
     return "pong"
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[Board]))
 async def list_boards() -> list[Board]:
     """List boards visible to the authenticated user. Use this to discover
     ``board_id`` values for the other tools."""
@@ -100,7 +202,7 @@ async def list_boards() -> list[Board]:
     return _decode_list(Board, raw, label="boards")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(User))
 async def whoami() -> User:
     """Fetch the authenticated user's profile.
 
@@ -112,7 +214,7 @@ async def whoami() -> User:
     return _decode(User, data, label="user")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(User))
 @validate_call
 async def get_user(user_id: Annotated[int, Field(ge=1)]) -> User:
     """Fetch one user by id. Useful after ``list_board_collaborators`` finds
@@ -122,7 +224,7 @@ async def get_user(user_id: Annotated[int, Field(ge=1)]) -> User:
     return _decode(User, data, label="user")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[Collaborator]))
 @validate_call
 async def list_board_collaborators(
     board_id: Annotated[int, Field(ge=1)],
@@ -138,7 +240,7 @@ async def list_board_collaborators(
     return board.collaborators
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[CustomFieldDefinition]))
 @validate_call
 async def list_custom_field_definitions(
     board_id: Annotated[int, Field(ge=1)],
@@ -182,7 +284,7 @@ async def list_custom_field_definitions(
     return definitions
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(Board))
 @validate_call
 async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
     """Fetch one board with its columns, swimlanes, and custom-field definitions.
@@ -196,7 +298,7 @@ async def get_board(board_id: Annotated[int, Field(ge=1)]) -> Board:
     return _decode(Board, data, label="board")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(Task))
 @validate_call
 async def get_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     """Fetch one task by id. Returns a Task with subtask/comment counts,
@@ -211,7 +313,7 @@ async def get_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     return _decode(Task, data, label="task")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[ChangelogEntry]))
 @validate_call
 async def recent_changes(
     board_id: Annotated[int, Field(ge=1)], since: datetime | None = None
@@ -233,7 +335,7 @@ async def recent_changes(
 _SEARCH_TASKS_MAX_LIMIT = 50
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[Task]))
 @validate_call
 async def search_tasks(
     query: str,
@@ -279,7 +381,7 @@ async def search_tasks(
     return _decode_list(Task, raw, label="search")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Task))
 @validate_call
 async def create_task(
     name: str,
@@ -396,7 +498,7 @@ async def _patch_task(
     return _decode(Task, data, label="task")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Task))
 @validate_call
 async def update_task(
     task_id: Annotated[int, Field(ge=1)],
@@ -441,7 +543,7 @@ async def update_task(
     )
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Task))
 @validate_call
 async def move_task(
     task_id: Annotated[int, Field(ge=1)],
@@ -466,7 +568,7 @@ async def move_task(
     )
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE_DESTRUCTIVE_IDEMPOTENT, output_schema=_output_schema(Task))
 @validate_call
 async def archive_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     """Archive a task. Returns the updated ``Task`` (caller can confirm
@@ -484,7 +586,7 @@ async def archive_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     return _decode(Task, data, label="task")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE_IDEMPOTENT, output_schema=_output_schema(Task))
 @validate_call
 async def set_custom_field(
     task_id: Annotated[int, Field(ge=1)],
@@ -516,7 +618,7 @@ async def set_custom_field(
     return _decode(Task, data, label="task")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Comment))
 @validate_call
 async def add_comment(task_id: Annotated[int, Field(ge=1)], content: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
@@ -528,7 +630,7 @@ async def add_comment(task_id: Annotated[int, Field(ge=1)], content: str) -> Com
     return _decode(Comment, data, label="comment")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE_DESTRUCTIVE, output_schema=_output_schema(Comment))
 @validate_call
 async def delete_comment(
     task_id: Annotated[int, Field(ge=1)],
@@ -548,7 +650,7 @@ async def delete_comment(
     return _decode(Comment, data, label="comment")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[Subtask]))
 @validate_call
 async def list_subtasks(task_id: Annotated[int, Field(ge=1)]) -> list[Subtask]:
     """List subtasks on a task — id, name, completion state, position.
@@ -561,7 +663,7 @@ async def list_subtasks(task_id: Annotated[int, Field(ge=1)]) -> list[Subtask]:
     return task.subtasks
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Subtask))
 @validate_call
 async def add_subtask(task_id: Annotated[int, Field(ge=1)], name: str) -> Subtask:
     """Add a subtask to a task. Returns the created ``Subtask``.
@@ -581,7 +683,7 @@ async def add_subtask(task_id: Annotated[int, Field(ge=1)], name: str) -> Subtas
     return _decode(Subtask, data, label="subtask")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Subtask))
 @validate_call
 async def update_subtask(
     subtask_id: Annotated[int, Field(ge=1)],
@@ -615,7 +717,7 @@ async def update_subtask(
     return _decode(Subtask, data, label="subtask")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE_DESTRUCTIVE, output_schema=_output_schema(Subtask))
 @validate_call
 async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     """Delete a subtask (soft-delete). Returns the deleted ``Subtask`` with
@@ -632,7 +734,7 @@ async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     return _decode(Subtask, data, label="subtask")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE_IDEMPOTENT, output_schema=_output_schema(list[Subtask]))
 @validate_call
 async def reorder_subtasks(
     task_id: Annotated[int, Field(ge=1)],
@@ -666,7 +768,7 @@ async def reorder_subtasks(
     return _decode_list(Subtask, data, label="subtasks")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(TimeTracker))
 @validate_call
 async def start_timer(
     task_id: Annotated[int, Field(ge=1)],
@@ -687,7 +789,7 @@ async def start_timer(
     return _decode(TimeTracker, data, label="time tracker")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE, output_schema=_output_schema(TimeTracker))
 @validate_call
 async def stop_timer(
     timer_id: Annotated[int, Field(ge=1)],
@@ -718,7 +820,7 @@ async def stop_timer(
     return _decode(TimeTracker, data, label="time tracker")
 
 
-@mcp.tool
+@mcp.tool(annotations=_WRITE_DESTRUCTIVE)
 @validate_call
 async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
     """Delete a time tracker entirely (e.g. cancel a mistakenly-started
@@ -731,13 +833,18 @@ async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
 
     Raises ``KanbanToolHTTPError(404)`` if the timer id is unknown or
     belongs to another user."""
+    # No explicit ``output_schema=`` on this decorator: FastMCP's auto
+    # derivation from the ``-> None`` return type produces the correct
+    # ``{"result": null}`` wrapped envelope already, and there's no
+    # ``models.py`` type to pin it to. Re-stating it here would just
+    # duplicate the framework's behaviour.
     # The API returns ``204 No Content`` (or sometimes empty 200) — there
     # is no body to decode. Just propagate any HTTP error and otherwise
     # return None.
     await _get_client().request("DELETE", f"time_trackers/{timer_id}")
 
 
-@mcp.tool
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[TimeTracker]))
 async def list_my_timers() -> list[TimeTracker]:
     """List the authenticated user's time trackers across all tasks.
 
