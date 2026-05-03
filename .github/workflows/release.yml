@@ -41,6 +41,14 @@ jobs:
           # input ``tag`` so the build artifacts match the right version.
           ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+      # Sync from ``uv.lock`` (no resolver pass) before building so the wheel
+      # that ships to PyPI is built against exactly the dependency set we
+      # tested against. Without this, ``uv build`` lets the resolver pick
+      # whatever satisfies the loose constraints in ``pyproject.toml`` at
+      # tag-push time, which can drift from CI. CI deliberately stays on the
+      # unfrozen path — that's how we catch loose-bound regressions before
+      # they ship — so ``--frozen`` only goes here.
+      - run: uv sync --frozen --no-dev
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
