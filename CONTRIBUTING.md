@@ -10,13 +10,17 @@ PR and we'll get along fine.
 git clone git@github.com:VeryLongOrgNameSuchWow/kanbantool-mcp.git
 cd kanbantool-mcp
 uv sync --dev          # installs runtime + dev dependencies
-uv run pytest          # 122+ tests, offline, < 2s
+uv run pytest          # offline suite, < 2s; prints --randomly-seed=<N>
 uv run ruff check .    # lint
 uv run ruff format --check .
 uv run ty check        # type check
 ```
 
 Python 3.11+ required. The CI matrix runs 3.11 / 3.12 / 3.13.
+
+Tests run in a randomized order via `pytest-randomly` to surface accidental
+ordering dependencies. The seed is printed at the top of every run; reproduce
+a flaky failure with `uv run pytest -p randomly --randomly-seed=<N>`.
 
 ## Filing issues
 
