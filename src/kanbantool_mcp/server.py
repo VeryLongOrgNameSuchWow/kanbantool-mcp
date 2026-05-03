@@ -530,6 +530,7 @@ async def update_task(
     Kanban Tool tasks have one assignee, not a list. For column/lane/position
     changes prefer ``move_task`` — it's the intent-revealing surface for that
     workflow.
+
     Raises ``ValueError`` if every field is ``None`` (no-op guard).
 
     Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
@@ -567,13 +568,14 @@ async def move_task(
 
     At least one of ``column_id`` / ``swimlane_id`` / ``position`` must be set,
     otherwise raises ``ValueError`` before issuing HTTP. ``column_id`` matches
-    the ``Task.lane_id`` on fetched tasks.
+    the ``Task.lane_id`` on fetched tasks. Moves are scoped to the task's
+    current board — there is no cross-board move surface.
 
     Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
-    ``column_id`` belongs to a different board than the task's current board
-    → fetch destination columns via ``get_board(board_id).columns`` first;
-    ``swimlane_id`` doesn't exist on the task's board → same fix via
-    ``get_board(...).swimlanes``."""
+    ``column_id`` doesn't belong to the task's board → fetch valid column
+    ids via ``get_board(get_task(task_id).board_id).columns`` and pick from
+    those; ``swimlane_id`` doesn't exist on the task's board → same fix via
+    ``.swimlanes`` on the same Board."""
     return await _patch_task(
         task_id,
         {
@@ -780,8 +782,13 @@ async def reorder_subtasks(
     """Reorder subtasks under a task. Returns the subtasks in the new order.
 
     ``ids`` must be the full set of subtask ids on ``task_id`` in the
-    desired order. Passing a partial set, or ids belonging to a different
-    task, raises ``KanbanToolValidationError`` from the API."""
+    desired order.
+
+    Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``ids`` is a partial set (missing some of the task's current subtask
+    ids) → list current ids via ``list_subtasks(task_id)`` and pass them
+    all in the new order; one or more ids belong to a different task →
+    same fix, since the API rejects cross-task references."""
     if not ids:
         raise ValueError(
             "reorder_subtasks requires at least one subtask id in `ids`. "
