@@ -1,0 +1,107 @@
+# kanbantool-mcp
+
+> An MCP (Model Context Protocol) server bridging an MCP-aware LLM client (Claude Code, Claude Desktop, Cursor, Continue, Cline, ...) with a [Kanban Tool](https://kanbantool.com/) account over the Kanban Tool API v3. Read tasks/boards, write tasks/comments/subtasks, track time — all via 26 typed tools the LLM calls directly.
+
+This file is the LLM-friendly map of the project: the tool surface, the
+quirks of the underlying API that shape how an agent should reach for these
+tools, and pointers to the deeper reference. The always-loaded short version
+lives in `instructions=` on the FastMCP server (in `src/kanbantool_mcp/server.py`)
+— this file is the longer companion.
+
+## Tool surface
+
+26 tools, three families:
+
+- **Read** — `list_boards`, `get_board`, `get_task`, `search_tasks`, `recent_changes`, `whoami`, `get_user`, `list_board_collaborators`, `list_subtasks`, `list_custom_field_definitions`, `list_my_timers`, `ping`.
+- **Write** — `create_task`, `update_task`, `move_task`, `archive_task`, `set_custom_field`, `add_comment`, `delete_comment`, `add_subtask`, `update_subtask`, `delete_subtask`, `reorder_subtasks`.
+- **Time** — `start_timer`, `stop_timer`, `delete_timer`.
+
+Per-tool docstrings (the LLM-visible prompts) live in `src/kanbantool_mcp/server.py`.
+
+## Quirks (the 6 things that shape agent behavior)
+
+These are non-obvious behaviors of the Kanban Tool API or this server's
+translation layer. An agent reaching for these tools should know them; an
+agent debugging unexpected behavior should re-read them.
+
+### 1. No webhooks — agent owns the polling cadence
+
+Kanban Tool ships no webhooks. The change-tracking primitive is
+`recent_changes(board_id, since)`, which returns the board's changelog
+newest-first. To monitor a board, the agent (LLM) is responsible for
+the polling cadence. Recommended cadence is **30–120s**, NOT
+per-keystroke. Always pass `since` (the timestamp of the last entry
+seen) on follow-up calls; omitting it returns the full history.
+
+### 2. `.json` path suffix is mandatory and added by the client
+
+Every Kanban Tool API v3 path requires a literal `.json` suffix
+(`/users/current.json`, `/boards/4217.json`, etc.). The client appends
+it automatically when not present. Pass query parameters via the
+`params=` keyword to `client.request()`, never embedded in the path —
+the suffix logic doesn't account for query strings.
+
+### 3. Per-account base URL
+
+The base URL is `https://<KANBANTOOL_DOMAIN>.kanbantool.com/api/v3/`
+— the `KANBANTOOL_DOMAIN` env var is the account subdomain. Tokens
+are scoped to one account. A 401 typically means the token doesn't
+belong to the configured domain, not (only) that the token is wrong.
+
+### 4. Bearer auth, single header
+
+Authorization is `Authorization: Bearer <KANBANTOOL_API_TOKEN>` set
+client-wide; do not override it via per-request `headers=`. The
+client scrubs `Bearer <…>` sequences from every error-body excerpt
+before surfacing — defense against an upstream proxy / WAF echoing
+the `Authorization` header into a 4xx/5xx response.
+
+### 5. `None` semantics: omit vs clear
+
+`update_task` / `move_task` / `update_subtask`: `None` means **omit**
+the field from the request. The Kanban Tool API ignores nulls on
+partial updates rather than clearing — passing `None` will NOT wipe
+a field. Issuing a request with no fields raises `ValueError`
+client-side (no-op guard).
+
+`set_custom_field`: `None` means **clear** the slot. The wire body
+sends a literal `null` for `custom_field_N`, and a subsequent
+`get_task` will see `custom_field_N: null`. This is the exception to
+the "None means omit" rule, kept inline rather than routed through
+`_patch_task` so the difference is loud.
+
+### 6. Typed error ladder + at-most-once writes
+
+All failures surface as `KanbanToolError` subclasses (never raw
+`httpx` or `pydantic` exceptions): `KanbanToolPermissionError`
+(401/403), `KanbanToolValidationError` (422 with parsed
+`field_errors`), `KanbanToolHTTPError` (other 4xx/5xx, including
+non-2xx 429 and 5xx that exceed the retry policy),
+`KanbanToolTransportError` (httpx transport failure after one
+retry). 422 errors carry per-field detail when the API returns it.
+
+The HTTP client retries `GET` requests once on transport failure,
+once on 429 (honoring `Retry-After` capped at 5s), and once on 5xx
+(0.5s delay). **Writes (POST/PUT/PATCH/DELETE) are never retried**
+on 429/5xx — at-most-once write semantics. The Kanban Tool API has
+no idempotency-key support, so a transient 503 from a write that
+landed server-side would double-create on retry. The agent decides
+whether to re-issue a failed write itself (typically by searching
+for the resource first to see if it landed).
+
+## Examples
+
+End-to-end usage transcripts (illustrative — not literal terminal output):
+
+- [examples/01-board-status.md](examples/01-board-status.md): read flow — discover a board, list its tasks.
+- [examples/02-create-and-comment.md](examples/02-create-and-comment.md): write flow — create a task and comment on it.
+- [examples/03-poll-recent-changes.md](examples/03-poll-recent-changes.md): the polling pattern for `recent_changes`.
+- [examples/04-user-discovery.md](examples/04-user-discovery.md): user-id discovery via `list_board_collaborators` / `whoami` / `get_user`.
+
+## Optional
+
+- [README.md](README.md): install + tool reference table for human readers.
+- [CONTRIBUTING.md](CONTRIBUTING.md): local dev loop, conventional-commit rules.
+- [SEMVER.md](SEMVER.md): v1.0+ stability commitment — which surfaces are stable.
+- [src/kanbantool_mcp/server.py](src/kanbantool_mcp/server.py): per-tool docstrings (the LLM-visible prompts).
+- [src/kanbantool_mcp/exceptions.py](src/kanbantool_mcp/exceptions.py): the typed error ladder.
