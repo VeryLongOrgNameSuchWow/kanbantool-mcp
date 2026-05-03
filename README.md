@@ -201,7 +201,7 @@ You can also verify from inside the assistant: ask **"who am I?"** — it'll cal
 | --- | --- | --- |
 | `list_boards` | List boards visible to the authenticated user. | — |
 | `get_board` | Fetch a board with its columns, swimlanes, and custom-field definitions. | `board_id` |
-| `search_tasks` | Search tasks across boards using Kanban Tool's query DSL (e.g. `@alice priority:high tags:bug`). Forwarded to the API verbatim. | `query`, `board_id?`, `limit?`, `page?` |
+| `search_tasks` | Search tasks across boards using Kanban Tool's query DSL (e.g. `@alice priority:high tags:bug`). Forwarded to the API verbatim. Returns a `SearchResults` wrapper exposing `results`, `total_count`, `page`, and `has_more`. | `query`, `board_id?`, `limit?`, `page?` |
 | `get_task` | Fetch a task by id with headline metadata, subtask/comment counts, and tracked time. | `task_id` |
 | `recent_changes` | Fetch the changelog feed for a board — the change-tracking primitive that stands in for webhooks (Kanban Tool ships none). Poll sparingly. `since` is required (raises `ValueError` if `None`); for first-poll use a short lookback like `datetime.now(UTC) - timedelta(hours=1)`. | `board_id`, `since` |
 | `create_task` | Create a new task on a board. Optional kwargs are omitted when unset. | `name`, `board_id`, `description?`, `lane_id?`, `priority?`, `tags?`, ... |

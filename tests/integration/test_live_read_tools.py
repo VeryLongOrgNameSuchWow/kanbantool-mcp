@@ -74,14 +74,17 @@ async def test_search_tasks_filters_archived(
     # Earlier spike probes saw ``/tasks/search.json`` 500 on an empty account;
     # against a populated board the call should succeed. If it still 500s,
     # that's a real upstream finding worth flagging in CI output.
-    tasks = await search_tasks(query="archived:false", board_id=populated_board_id)
+    response = await search_tasks(query="archived:false", board_id=populated_board_id)
 
-    assert isinstance(tasks, list)
-    assert len(tasks) >= 1
-    assert all(isinstance(t, Task) for t in tasks)
-    assert all(t.board_id == populated_board_id for t in tasks)
+    assert len(response.results) >= 1
+    assert all(isinstance(t, Task) for t in response.results)
+    assert all(t.board_id == populated_board_id for t in response.results)
     # ``archived:false`` should mean the filter behaved.
-    assert all(t.archived_at is None for t in tasks)
+    assert all(t.archived_at is None for t in response.results)
+    # Pagination envelope is populated by the live API.
+    assert response.total_count is None or response.total_count >= len(response.results)
+    assert response.page == 1
+    assert isinstance(response.has_more, bool)
 
 
 async def test_get_task_populates_renamed_wire_fields(
@@ -92,8 +95,8 @@ async def test_get_task_populates_renamed_wire_fields(
     # LLM agent would actually use.
     board = await get_board(populated_board_id)
     search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
-    assert search_hits, "populated_board_id fixture promised non-archived tasks"
-    task_id = search_hits[0].id
+    assert search_hits.results, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits.results[0].id
 
     task = await get_task(task_id)
 
@@ -125,8 +128,8 @@ async def test_get_task_surfaces_additive_v3_fields(
     typed attributes must exist on the resulting ``Task`` and respect their
     declared types where present."""
     search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
-    assert search_hits, "populated_board_id fixture promised non-archived tasks"
-    task_id = search_hits[0].id
+    assert search_hits.results, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits.results[0].id
 
     task = await get_task(task_id)
 
@@ -199,8 +202,8 @@ async def test_list_subtasks_and_inline_task_subtasks_agree(
     than counts. This test would have caught the broken nested-endpoint path
     pre-fix (the old code 404'd live)."""
     search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
-    assert search_hits, "populated_board_id fixture promised non-archived tasks"
-    task_id = search_hits[0].id
+    assert search_hits.results, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits.results[0].id
 
     subtasks = await list_subtasks(task_id)
     assert isinstance(subtasks, list)
@@ -290,8 +293,8 @@ async def test_get_task_collects_custom_field_values(
     ``custom_fields`` dict. Verify the lift happens against a real task —
     on the welcome board they're all ``None``, but the keys must be there."""
     search_hits = await search_tasks(query="archived:false", board_id=populated_board_id)
-    assert search_hits, "populated_board_id fixture promised non-archived tasks"
-    task_id = search_hits[0].id
+    assert search_hits.results, "populated_board_id fixture promised non-archived tasks"
+    task_id = search_hits.results[0].id
     task = await get_task(task_id)
 
     # On any board with all 15 slots emitted (every Kanban Tool board, per

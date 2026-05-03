@@ -19,6 +19,7 @@ from .models import (
     Collaborator,
     Comment,
     CustomFieldDefinition,
+    SearchResults,
     Subtask,
     Task,
     TimeTracker,
@@ -443,7 +444,7 @@ async def search_tasks(
     board_id: Annotated[int, Field(ge=1)] | None = None,
     limit: Annotated[int, Field(ge=1)] = 25,
     page: Annotated[int, Field(ge=1)] = 1,
-) -> list[Task]:
+) -> SearchResults:
     """Search tasks across boards using Kanban Tool's query DSL.
 
     ``query`` is forwarded verbatim — do not URL-encode, do not wrap the whole
@@ -464,6 +465,17 @@ async def search_tasks(
     things the DSL doesn't cover (comment full-text, fuzzy match) — say so
     instead. ``board_id`` scopes to one board (omit to search all visible).
     ``limit`` is clamped to 50; paginate further with ``page`` (1-indexed).
+
+    Returns a ``SearchResults`` wrapper:
+
+    - ``results`` — the list of matched ``Task`` objects on this page.
+    - ``total_count`` — total matches across all pages (from the API's
+      pagination envelope; ``None`` if the API omits the envelope).
+    - ``page`` — 1-indexed page number of this response.
+    - ``has_more`` — ``True`` when at least one further page exists. Use
+      this to decide whether to bump ``page`` and call again, instead of
+      heuristics on ``len(results) == limit`` (which is wrong on the
+      last page).
     """
     capped_limit = min(limit, _SEARCH_TASKS_MAX_LIMIT)
     params: dict[str, str | int] = {
@@ -478,8 +490,34 @@ async def search_tasks(
     # When ``limit``/``page`` are supplied (always, here), the API wraps
     # results in ``{"results": [...], "pagination": {...}}``. Without those
     # params it returns a bare list — but we always paginate.
-    raw = data.get("results", []) if isinstance(data, dict) else []
-    return _decode_list(Task, raw, label="search")
+    raw_results: list[Any] = []
+    pagination: dict[str, Any] = {}
+    if isinstance(data, dict):
+        raw_results = data.get("results") or []
+        envelope = data.get("pagination")
+        if isinstance(envelope, dict):
+            pagination = envelope
+    tasks = _decode_list(Task, raw_results, label="search")
+
+    # Surface the API's pagination envelope as typed fields. Defaults
+    # below are intentionally conservative: ``total_count=None`` and
+    # ``has_more=False`` when the envelope is missing or malformed, so
+    # callers never get a phantom "more pages exist" signal that would
+    # prompt a wasted follow-up request.
+    total_count = pagination.get("results_count")
+    if not isinstance(total_count, int):
+        total_count = None
+    pages_count = pagination.get("pages_count")
+    has_more = isinstance(pages_count, int) and page < pages_count
+    response_page = pagination.get("page")
+    if not isinstance(response_page, int):
+        response_page = page
+    return SearchResults(
+        results=tasks,
+        total_count=total_count,
+        page=response_page,
+        has_more=has_more,
+    )
 
 
 @_write_tool(annotations=_WRITE, output_schema=_output_schema(Task))

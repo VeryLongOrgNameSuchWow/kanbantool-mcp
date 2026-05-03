@@ -66,8 +66,8 @@ async def populated_board_id(_inject_live_client: KanbanToolClient) -> int:
     """
     boards = await list_boards()
     for board in boards:
-        tasks = await search_tasks(query="archived:false", board_id=board.id)
-        if tasks:
+        response = await search_tasks(query="archived:false", board_id=board.id)
+        if response.results:
             return board.id
     pytest.skip(
         "no board with non-archived tasks on the test account; "
