@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Generic, Literal, TypeVar
@@ -10,7 +11,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError, validate_call
 
 from .client import KanbanToolClient
-from .config import Config
+from .config import Config, env_flag
 from .exceptions import KanbanToolHTTPError
 from .models import (
     Board,
@@ -73,7 +74,48 @@ subclasses (`KanbanToolPermissionError` for 401/403, \
 `KanbanToolHTTPError` otherwise, `KanbanToolTransportError` on transport \
 failure)."""
 
+# Names of the 11 read-class tools — the read/write split in one place,
+# not implicit in decorator usage below.
+READ_ONLY_TOOLS: frozenset[str] = frozenset(
+    {
+        "list_boards",
+        "get_board",
+        "search_tasks",
+        "get_task",
+        "recent_changes",
+        "whoami",
+        "get_user",
+        "list_board_collaborators",
+        "list_custom_field_definitions",
+        "list_subtasks",
+        "list_my_timers",
+    }
+)
+
 mcp: FastMCP = FastMCP("kanbantool-mcp", instructions=_SERVER_INSTRUCTIONS)
+
+# Read at import time, not via Config.from_env(): @mcp.tool decorators
+# evaluate at import, so the gate must be settled before they run.
+_READ_ONLY_MODE = env_flag("KANBANTOOL_READ_ONLY")
+
+
+def _write_tool(**tool_kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator factory for write tools: forwards ``tool_kwargs`` to
+    ``@mcp.tool(**tool_kwargs)`` in default mode, and is a no-op in read-only
+    mode (returns the bare function so tests and in-process callers can still
+    invoke it directly).
+
+    Use as ``@_write_tool(annotations=..., output_schema=...)`` on every
+    state-mutating tool — same kwargs as ``@mcp.tool``, just gated by
+    ``KANBANTOOL_READ_ONLY``."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if _READ_ONLY_MODE:
+            return func
+        return mcp.tool(**tool_kwargs)(func)
+
+    return decorator
+
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
@@ -440,7 +482,7 @@ async def search_tasks(
     return _decode_list(Task, raw, label="search")
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Task))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(Task))
 @validate_call
 async def create_task(
     name: str,
@@ -564,7 +606,7 @@ async def _patch_task(
     return _decode(Task, data, label="task")
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Task))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(Task))
 @validate_call
 async def update_task(
     task_id: Annotated[int, Field(ge=1)],
@@ -615,7 +657,7 @@ async def update_task(
     )
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Task))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(Task))
 @validate_call
 async def move_task(
     task_id: Annotated[int, Field(ge=1)],
@@ -646,7 +688,7 @@ async def move_task(
     )
 
 
-@mcp.tool(annotations=_WRITE_DESTRUCTIVE_IDEMPOTENT, output_schema=_output_schema(Task))
+@_write_tool(annotations=_WRITE_DESTRUCTIVE_IDEMPOTENT, output_schema=_output_schema(Task))
 @validate_call
 async def archive_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     """Archive a task. Returns the updated ``Task`` (caller can confirm
@@ -668,7 +710,7 @@ async def archive_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
     return _decode(Task, data, label="task")
 
 
-@mcp.tool(annotations=_WRITE_IDEMPOTENT, output_schema=_output_schema(Task))
+@_write_tool(annotations=_WRITE_IDEMPOTENT, output_schema=_output_schema(Task))
 @validate_call
 async def set_custom_field(
     task_id: Annotated[int, Field(ge=1)],
@@ -702,7 +744,7 @@ async def set_custom_field(
     return _decode(Task, data, label="task")
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Comment))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(Comment))
 @validate_call
 async def add_comment(task_id: Annotated[int, Field(ge=1)], content: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
@@ -716,7 +758,7 @@ async def add_comment(task_id: Annotated[int, Field(ge=1)], content: str) -> Com
     return _decode(Comment, data, label="comment")
 
 
-@mcp.tool(annotations=_WRITE_DESTRUCTIVE, output_schema=_output_schema(Comment))
+@_write_tool(annotations=_WRITE_DESTRUCTIVE, output_schema=_output_schema(Comment))
 @validate_call
 async def delete_comment(
     task_id: Annotated[int, Field(ge=1)],
@@ -752,7 +794,7 @@ async def list_subtasks(task_id: Annotated[int, Field(ge=1)]) -> list[Subtask]:
     return task.subtasks
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Subtask))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(Subtask))
 @validate_call
 async def add_subtask(task_id: Annotated[int, Field(ge=1)], name: str) -> Subtask:
     """Add a subtask to a task. Returns the created ``Subtask``.
@@ -774,7 +816,7 @@ async def add_subtask(task_id: Annotated[int, Field(ge=1)], name: str) -> Subtas
     return _decode(Subtask, data, label="subtask")
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(Subtask))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(Subtask))
 @validate_call
 async def update_subtask(
     subtask_id: Annotated[int, Field(ge=1)],
@@ -812,7 +854,7 @@ async def update_subtask(
     return _decode(Subtask, data, label="subtask")
 
 
-@mcp.tool(annotations=_WRITE_DESTRUCTIVE, output_schema=_output_schema(Subtask))
+@_write_tool(annotations=_WRITE_DESTRUCTIVE, output_schema=_output_schema(Subtask))
 @validate_call
 async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     """Delete a subtask (soft-delete). Returns the deleted ``Subtask`` with
@@ -832,7 +874,7 @@ async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     return _decode(Subtask, data, label="subtask")
 
 
-@mcp.tool(annotations=_WRITE_IDEMPOTENT, output_schema=_output_schema(list[Subtask]))
+@_write_tool(annotations=_WRITE_IDEMPOTENT, output_schema=_output_schema(list[Subtask]))
 @validate_call
 async def reorder_subtasks(
     task_id: Annotated[int, Field(ge=1)],
@@ -871,7 +913,7 @@ async def reorder_subtasks(
     return _decode_list(Subtask, data, label="subtasks")
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(TimeTracker))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(TimeTracker))
 @validate_call
 async def start_timer(
     task_id: Annotated[int, Field(ge=1)],
@@ -921,7 +963,7 @@ async def start_timer(
     return _decode(TimeTracker, data, label="time tracker")
 
 
-@mcp.tool(annotations=_WRITE, output_schema=_output_schema(TimeTracker))
+@_write_tool(annotations=_WRITE, output_schema=_output_schema(TimeTracker))
 @validate_call
 async def stop_timer(
     timer_id: Annotated[int, Field(ge=1)],
@@ -952,7 +994,7 @@ async def stop_timer(
     return _decode(TimeTracker, data, label="time tracker")
 
 
-@mcp.tool(annotations=_WRITE_DESTRUCTIVE)
+@_write_tool(annotations=_WRITE_DESTRUCTIVE)
 @validate_call
 async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
     """Delete a time tracker entirely (e.g. cancel a mistakenly-started

@@ -5,6 +5,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+# Narrow on purpose so typo'd values (``ture``) fail closed.
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def env_flag(name: str) -> bool:
+    """Parse a boolean env var with the project-wide truthy convention."""
+    return os.environ.get(name, "").strip().lower() in _TRUTHY_ENV_VALUES
+
 
 @dataclass(frozen=True)
 class Config:
