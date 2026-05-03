@@ -402,7 +402,14 @@ async def create_task(
     payload on writes, so this kwarg is the wire field name directly.)
     ``priority`` accepts the string enum or the raw integer; ``tags`` is a
     comma-separated string; ``due_date`` is an ISO 8601 string forwarded as-is.
-    Unset kwargs are omitted from the request, never sent as explicit null."""
+    Unset kwargs are omitted from the request, never sent as explicit null.
+
+    Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``name`` empty/missing → fix by passing a non-empty string;
+    ``lane_id`` belongs to a different board → resolve column ids on the
+    target board first via ``get_board(board_id).columns``;
+    ``assigned_user_id`` not a board collaborator → check via
+    ``list_board_collaborators(board_id)``."""
     payload: dict[str, Any] = {"name": name, "board_id": board_id}
     if description is not None:
         payload["description"] = description
@@ -523,7 +530,13 @@ async def update_task(
     Kanban Tool tasks have one assignee, not a list. For column/lane/position
     changes prefer ``move_task`` — it's the intent-revealing surface for that
     workflow.
-    Raises ``ValueError`` if every field is ``None`` (no-op guard)."""
+
+    Raises ``ValueError`` if every field is ``None`` (no-op guard).
+
+    Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``lane_id`` from a different board → use ``get_board(board_id).columns``
+    on the destination board first; ``assigned_user_id`` not a board
+    collaborator → ``list_board_collaborators(board_id)`` to confirm."""
     return await _patch_task(
         task_id,
         {
@@ -555,8 +568,14 @@ async def move_task(
 
     At least one of ``column_id`` / ``swimlane_id`` / ``position`` must be set,
     otherwise raises ``ValueError`` before issuing HTTP. ``column_id`` matches
-    the ``Task.lane_id`` on fetched tasks. Passing a column id from a different
-    board raises ``KanbanToolValidationError`` with parsed ``field_errors``."""
+    the ``Task.lane_id`` on fetched tasks. Moves are scoped to the task's
+    current board — there is no cross-board move surface.
+
+    Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``column_id`` doesn't belong to the task's board → fetch valid column
+    ids via ``get_board(get_task(task_id).board_id).columns`` and pick from
+    those; ``swimlane_id`` doesn't exist on the task's board → same fix via
+    ``.swimlanes`` on the same Board."""
     return await _patch_task(
         task_id,
         {
@@ -576,7 +595,11 @@ async def archive_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
 
     Idempotent: re-archiving an already-archived task succeeds. There is no
     ``unarchive_task`` yet — archiving is currently one-way from this surface.
-    Raises ``KanbanToolHTTPError(404)`` if the task id is unknown."""
+
+    Failure modes: ``KanbanToolHTTPError(404)`` when the task id is unknown
+    (verify via ``get_task(task_id)`` first if you're unsure);
+    ``KanbanToolPermissionError(403)`` when the authenticated user lacks
+    write access to the task's board."""
     # Sentinel-action family on PATCH /tasks/{id}.json: "archive",
     # "unarchive", "delete", "undelete". If we ever add unarchive_task /
     # delete_task / restore_task, copy this 2-line shape — don't generalize
@@ -606,9 +629,11 @@ async def set_custom_field(
     ``custom_field_N: null``. This differs from ``update_task`` semantics
     where ``None`` means *omit*; for custom fields ``None`` means *clear*.
 
-    Type mismatches (e.g. writing ``"hi"`` into a numeric slot) surface as
-    ``KanbanToolValidationError`` (422) from the API, with parsed
-    ``field_errors`` populated."""
+    Common 422 (``KanbanToolValidationError`` with parsed ``field_errors``):
+    type mismatch — e.g. writing ``"hi"`` into a numeric slot, or a value
+    not in ``options`` for a dropdown-typed slot. Inspect the slot's
+    ``type``/``options`` via ``list_custom_field_definitions(board_id)``
+    before writing if the slot purpose is uncertain."""
     # NOTE: Deliberately does NOT route through ``_patch_task``. That helper
     # has None-skip semantics ("omit, don't clear"); here ``None`` MUST land
     # on the wire as a literal ``null`` to clear the field. Build the body
@@ -622,9 +647,11 @@ async def set_custom_field(
 @validate_call
 async def add_comment(task_id: Annotated[int, Field(ge=1)], content: str) -> Comment:
     """Post a comment on a task. Returns the created ``Comment`` with id,
-    content, author, and timestamps. Empty ``content`` typically raises
-    ``KanbanToolValidationError`` from the API; the ``field_errors`` key
-    matches the parameter name (``"content"``)."""
+    content, author, and timestamps.
+
+    Common 422 (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``content`` empty or whitespace-only — fix by passing a non-empty
+    string; the ``field_errors`` key matches the parameter name."""
     body = {"comment": {"content": content}}
     data = await _get_client().request("POST", f"tasks/{task_id}/comments", json=body)
     return _decode(Comment, data, label="comment")
@@ -645,7 +672,10 @@ async def delete_comment(
     gone." There is no edit endpoint on the API; if you need to "fix" a
     comment, delete it and post a replacement.
 
-    Raises ``KanbanToolHTTPError(404)`` if either id is unknown."""
+    Failure modes: ``KanbanToolHTTPError(404)`` when either id is unknown
+    or the comment isn't on that task — common cause is reusing a stale
+    ``comment_id`` from a previous list. Re-fetch the task's current
+    comments before retrying."""
     data = await _get_client().request("DELETE", f"tasks/{task_id}/comments/{comment_id}")
     return _decode(Comment, data, label="comment")
 
@@ -668,9 +698,11 @@ async def list_subtasks(task_id: Annotated[int, Field(ge=1)]) -> list[Subtask]:
 async def add_subtask(task_id: Annotated[int, Field(ge=1)], name: str) -> Subtask:
     """Add a subtask to a task. Returns the created ``Subtask``.
 
-    ``name`` is the human-readable label. Empty ``name`` typically raises
-    ``KanbanToolValidationError`` from the API. Mirrors the parameter name
-    used by ``update_subtask`` and the wire/model field on ``Subtask.name``."""
+    ``name`` is the human-readable label. Mirrors the parameter name used
+    by ``update_subtask`` and the wire/model field on ``Subtask.name``.
+
+    Common 422 (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``name`` empty or whitespace-only — fix by passing a non-empty string."""
     # Wire quirk: ``POST /subtasks.json`` takes a flat top-level body —
     # ``{"name": ..., "task_id": ...}`` — NOT the Rails-style ``{"subtask": {...}}``
     # envelope used by ``POST /tasks.json`` and friends. A spike against the
@@ -698,7 +730,11 @@ async def update_subtask(
     *clear*. Use this to mark complete (``is_completed=True``), rename
     (``name="..."``), or change the assignee (``assigned_user_id=42``).
     The ``position`` field is read-only on this endpoint; use
-    ``reorder_subtasks`` to change ordering."""
+    ``reorder_subtasks`` to change ordering.
+
+    Common 422 (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``assigned_user_id`` not a collaborator on the parent task's board —
+    use ``list_board_collaborators(board_id)`` to confirm before retrying."""
     # Same flat-body convention as ``add_subtask`` — ``PATCH /subtasks/{id}.json``
     # does NOT take a ``{"subtask": {...}}`` envelope. Confirmed via live spike.
     payload: dict[str, Any] = {}
@@ -729,7 +765,10 @@ async def delete_subtask(subtask_id: Annotated[int, Field(ge=1)]) -> Subtask:
     irreversible from an audit perspective, but the MCP-visible effect is
     "the subtask is gone."
 
-    Raises ``KanbanToolHTTPError(404)`` if the subtask id is unknown."""
+    Failure modes: ``KanbanToolHTTPError(404)`` when the subtask id is
+    unknown OR was already soft-deleted in a previous call (the API
+    returns 404 in both cases). Re-fetch the parent task's
+    ``subtasks`` list to confirm the current state before retrying."""
     data = await _get_client().request("DELETE", f"subtasks/{subtask_id}")
     return _decode(Subtask, data, label="subtask")
 
@@ -743,8 +782,13 @@ async def reorder_subtasks(
     """Reorder subtasks under a task. Returns the subtasks in the new order.
 
     ``ids`` must be the full set of subtask ids on ``task_id`` in the
-    desired order. Passing a partial set, or ids belonging to a different
-    task, raises ``KanbanToolValidationError`` from the API."""
+    desired order.
+
+    Common 422s (``KanbanToolValidationError`` with parsed ``field_errors``):
+    ``ids`` is a partial set (missing some of the task's current subtask
+    ids) → list current ids via ``list_subtasks(task_id)`` and pass them
+    all in the new order; one or more ids belong to a different task →
+    same fix, since the API rejects cross-task references."""
     if not ids:
         raise ValueError(
             "reorder_subtasks requires at least one subtask id in `ids`. "
@@ -772,18 +816,47 @@ async def reorder_subtasks(
 @validate_call
 async def start_timer(
     task_id: Annotated[int, Field(ge=1)],
-    board_id: Annotated[int, Field(ge=1)],
+    board_id: Annotated[int, Field(ge=1)] | None = None,
 ) -> TimeTracker:
     """Start a new time tracker on a task for the authenticated user.
 
-    Returns the created ``TimeTracker``. Both ``task_id`` AND ``board_id``
-    are required by the API — passing only one returns 404. The new timer
-    starts in the running state (``ended_at`` is ``None``); call
-    ``stop_timer`` when work pauses or ends.
+    Returns the created ``TimeTracker``. The new timer starts in the
+    running state (``ended_at`` is ``None``); call ``stop_timer`` when
+    work pauses or ends.
+
+    ``board_id`` is required by the Kanban Tool API but may be omitted
+    here — when not supplied the tool resolves it via an internal
+    ``get_task(task_id)`` call (one extra HTTP round-trip). Pass it
+    explicitly when you already have it (e.g. you just listed tasks for a
+    board) to avoid the second request. Either way, the resulting wire
+    body sends both ids.
 
     Note: timers are per-user — starting one creates a record for the
     authenticated user only. Use ``whoami`` if you need to know whose
-    timer it is."""
+    timer it is.
+
+    Common 422: the API rejects starting a timer on a task whose board
+    you don't have access to with a typed ``KanbanToolValidationError``.
+    Verify the task is on a board you can list via ``list_boards``."""
+    if board_id is None:
+        # Same shape as ``list_subtasks`` / ``list_board_collaborators``
+        # — read-side sugar that costs one extra request to keep the
+        # tool surface ergonomic. The resolved id is then sent to the
+        # API the same way an explicit ``board_id`` argument would be.
+        task = await get_task(task_id)
+        if task.board_id is None:
+            # Defensive: a Task with no board_id can't start a timer
+            # because the API requires one. ``Task.board_id`` is
+            # ``Optional`` in the model to match the wire shape (compact
+            # search results may omit it), but ``get_task`` returns the
+            # detail payload, so a missing board_id here means the API
+            # itself failed to populate the field — surface that clearly
+            # rather than send a degenerate request.
+            raise ValueError(
+                f"start_timer could not resolve board_id for task_id={task_id}: "
+                "the task detail response had no board_id. Pass board_id explicitly."
+            )
+        board_id = task.board_id
     body = {"board_id": board_id, "task_id": task_id}
     data = await _get_client().request("POST", "time_trackers", json=body)
     return _decode(TimeTracker, data, label="time tracker")
@@ -831,16 +904,16 @@ async def delete_timer(timer_id: Annotated[int, Field(ge=1)]) -> None:
     ``DELETE /time_trackers/{id}.json``. The caller should treat the
     timer id as invalidated after this call.
 
-    Raises ``KanbanToolHTTPError(404)`` if the timer id is unknown or
-    belongs to another user."""
+    Failure modes: ``KanbanToolHTTPError(404)`` when the timer id is
+    unknown, was already deleted, or belongs to another user (the API
+    scopes timer ids to the authenticated user). Use ``list_my_timers()``
+    to confirm the current set of timer ids you own before retrying."""
     # No explicit ``output_schema=`` on this decorator: FastMCP's auto
     # derivation from the ``-> None`` return type produces the correct
     # ``{"result": null}`` wrapped envelope already, and there's no
-    # ``models.py`` type to pin it to. Re-stating it here would just
-    # duplicate the framework's behaviour.
-    # The API returns ``204 No Content`` (or sometimes empty 200) — there
-    # is no body to decode. Just propagate any HTTP error and otherwise
-    # return None.
+    # ``models.py`` type to pin it to. The API returns 204 No Content
+    # (or sometimes empty 200) — there is no body to decode. Just
+    # propagate any HTTP error and otherwise return None.
     await _get_client().request("DELETE", f"time_trackers/{timer_id}")
 
 
