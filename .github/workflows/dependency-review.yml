@@ -1,0 +1,42 @@
+name: Dependency Review
+
+# License-drift detector first, vulnerability scan second. Runs only on PRs
+# that touch the dependency manifest (``pyproject.toml``) or the resolved
+# graph (``uv.lock``); other PRs skip the workflow entirely.
+#
+# Why license drift leads: the project ships under MIT and re-exports
+# transitively through ``fastmcp`` / ``httpx`` / ``pydantic``. A new
+# transitive copyleft pull (GPL/AGPL) would change what downstream
+# consumers can do with this package, and that's the kind of change that
+# is silently easy to merge through a routine bump otherwise. The action
+# also flags known-vulnerable versions; we leave severity defaults in
+# place rather than tuning ``fail-on-severity`` here — the GitHub
+# Security tab is the source of truth, this is the early-warning step.
+#
+# Public-only: ``dependency-review-action`` requires the GitHub
+# Dependency Graph, which is enabled by default on public repos and
+# requires GHAS on private. Gate matches CodeQL.
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.repository.visibility == 'public' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48  # v4.9.0
+        with:
+          comment-summary-in-pr: on-failure
