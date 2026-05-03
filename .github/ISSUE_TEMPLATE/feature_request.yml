@@ -1,0 +1,49 @@
+name: Feature request
+description: Surface a Kanban Tool API capability the MCP doesn't yet expose
+labels: ["type:enhancement"]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What you want to do
+      description: What's the LLM-agent workflow you're trying to enable?
+      placeholder: "Have Claude triage incoming bug tickets by tagging them with the right card type."
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What's missing
+      description: |
+        Which existing tool falls short, or which API capability isn't surfaced at all? A concrete API endpoint reference helps:
+        https://kanbantool.com/developer/api-v3
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-shape
+    attributes:
+      label: Proposed shape
+      description: Optional but appreciated — what should the tool signature look like? Keep ergonomics LLM-friendly (single responsibility, terse args, predictable response).
+      render: python
+      placeholder: |
+        new_tool(arg1: int, arg2: str) -> Result
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Did you try doing this with existing tools? Why didn't it work?
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - One small tool
+        - New tool family
+        - Cross-cutting behavior change
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else

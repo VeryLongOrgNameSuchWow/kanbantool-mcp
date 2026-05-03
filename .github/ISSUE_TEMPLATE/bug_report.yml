@@ -1,0 +1,82 @@
+name: Bug report
+description: Something isn't working as documented
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: One paragraph — what you tried, what happened, why it surprised you.
+      placeholder: "search_tasks returns an empty list for a query that matches cards in the Kanban Tool web UI."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimum steps. Include the exact MCP tool call (or `curl`) and the response. Redact `KANBANTOOL_API_TOKEN` to `<TOKEN>`; the subdomain is fine to share.
+      placeholder: |
+        1. KANBANTOOL_DOMAIN=acme, KANBANTOOL_API_TOKEN=<TOKEN>
+        2. search_tasks(query="@me priority:high", board_id=4217)
+        3. Response: []
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+  - type: input
+    id: kbmcp-version
+    attributes:
+      label: kanbantool-mcp version
+      description: Run `uvx kanbantool-mcp --version`, or check the wheel METADATA.
+      placeholder: "0.7.2"
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: Output of `python --version`.
+      placeholder: "3.12.6"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 14.5 / Ubuntu 24.04 / Windows 11"
+    validations:
+      required: true
+  - type: dropdown
+    id: mcp-client
+    attributes:
+      label: MCP client
+      options:
+        - Claude Code
+        - Claude Desktop
+        - Cursor
+        - Cline
+        - Continue
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Logs, related issues, or additional context. Redact tokens before pasting.
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I have redacted my `KANBANTOOL_API_TOKEN` from anything I pasted above.
+          required: true
+        - label: I checked existing issues for duplicates.
+          required: true
