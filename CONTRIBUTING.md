@@ -78,13 +78,27 @@ workflow).
   Keep them terse, action-oriented, and accurate. Don't explain
   *what* the code does — explain *when* an agent should reach for
   this tool and what a good argument looks like.
-- The `_SERVER_INSTRUCTIONS` string in `src/kanbantool_mcp/server.py`
-  is the always-loaded mental model surfaced to MCP clients. It's
-  hard-capped at ~150 words. The longer `llms.txt` at the repo root
-  (when present) extends it with quirks and edge cases. **When you
-  add or remove a tool, or change its semantics in a way that
-  contradicts either surface, update both `_SERVER_INSTRUCTIONS`
-  AND `llms.txt`.** They must not drift.
+
+### When you add or rename a tool
+
+The LLM-facing mental model of `kanbantool-mcp` is encoded across
+several surfaces that will silently drift if you only update one.
+When you add a tool, rename a tool, or change a tool's semantics in
+a way that contradicts any of these, update them in the same PR:
+
+- **Tool registration** — the `@mcp.tool` function and its
+  docstring in `src/kanbantool_mcp/server.py`. The docstring is the
+  per-tool prompt the LLM sees.
+- **`_SERVER_INSTRUCTIONS`** in `src/kanbantool_mcp/server.py` —
+  the always-loaded preamble passed as `instructions=` on the
+  FastMCP server. Hard-capped at ~150 words; it's the mental model,
+  not the reference.
+- **`llms.txt`** at the repo root — the longer companion that
+  extends the preamble with quirks, edge cases, and the full tool
+  inventory.
+- **README per-client install snippets** — only when the change
+  affects what a fresh installer sees (new env var, renamed
+  command, changed default).
 
 ### CI
 

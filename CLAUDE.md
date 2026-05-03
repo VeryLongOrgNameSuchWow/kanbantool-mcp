@@ -75,6 +75,16 @@ M5 — Custom-field writes & comment polish:
 - **M6** — v1.0 readiness: SemVer commitment policy, README pass, error-message audit, RELEASING.md updates. *Complete.*
 - **M7** — Pre-1.0 naming sweep: align Python parameter names with wire shapes / sibling tools before v1.0 locks them in. `add_comment(text=...)` → `add_comment(content=...)` (matches the wire field that the M5 bugfix had to send anyway). `add_subtask(title=...)` → `add_subtask(name=...)` (matches `Subtask.name` and `update_subtask(name=...)`). Wire bodies unchanged; this is purely a Python parameter rename. *Complete.*
 
+## Principles
+
+**Be honest about the upstream, even when awkward.** Surface what the Kanban Tool API actually does, not a tidied-up version of it. LLM-facing defaults belong in docstrings, explicit; do not invent windows, synthesize dry-run results, or paper over missing endpoints with plausible-looking shims.
+
+In practice: every docstring spells out the Rails `{"task": {...}}` envelope vs. flat body, soft-delete vs. hard, omit-vs-clear semantics, and the absence of comment-edit and bulk list-users endpoints — rather than letting the LLM guess.
+
+**Stateless write semantics; every write returns the updated resource.** Write tools decode and return the post-write resource so the caller can confirm state without a follow-up `get_*`. The return shape of a write tool is part of the contract, especially as the project locks v1.0.
+
+In practice: every write path runs `Model.model_validate(...)` on the response and returns the typed model — `update_task`, `move_task`, `add_comment`, `delete_comment`, `set_custom_field`, the subtask family, and the timer family all follow the pattern. New write tools must too.
+
 ## Codebase conventions
 
 - **Client singleton** — `server._get_client()` is a lazy module-level singleton (`_client: KanbanToolClient | None`). The stdio MCP runs on a single asyncio loop on a single thread, so no lock around init. Tools call `_get_client()` per request; tests overwrite `server._client` via the `_inject_client` fixture.
