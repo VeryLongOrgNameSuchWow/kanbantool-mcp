@@ -163,3 +163,29 @@ def test_check_flag_is_documented_in_help(
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
     assert "--check" in captured.out
+    # ``--version`` should also be discoverable from --help.
+    assert "--version" in captured.out
+
+
+def test_version_flag_prints_version_and_exits_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--version`` (locked flag name; future-proof) prints
+    ``kanbantool-mcp <version>`` and exits 0. Sourced via
+    ``importlib.metadata.version`` so the wheel's metadata is the
+    single source of truth — the test accepts either the source-tree
+    ``__version__`` (when installed) or the literal ``"unknown"``
+    (when running from a non-installed checkout)."""
+    from kanbantool_mcp import __version__ as src_version
+
+    monkeypatch.setattr("sys.argv", ["kanbantool-mcp", "--version"])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    # argparse's ``version`` action prints to stdout and includes the prog name.
+    assert "kanbantool-mcp" in captured.out
+    out = captured.out.strip()
+    assert out.endswith(src_version) or out.endswith("unknown"), (
+        f"Expected output ending with {src_version!r} or 'unknown', got {out!r}"
+    )

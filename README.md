@@ -171,6 +171,8 @@ OK: Alice Example (your-account) — token resolves; you can use kanbantool-mcp 
 
 The flag exits 0 on success and non-zero on failure (missing env, 401/403 auth, network failure), with an actionable hint per error class. Run it once after wiring the server into your client to confirm the token reaches Kanban Tool **before** asking your assistant to do anything with it.
 
+To check which version you have installed, run `kanbantool-mcp --version` (e.g. `uvx kanbantool-mcp --version`). Useful when reporting an issue.
+
 You can also verify from inside the assistant: ask **"who am I?"** — it'll call the `whoami` tool and confirm your token resolves. If that comes back with your name, the server is reachable and your credentials work.
 
 ## Tool reference

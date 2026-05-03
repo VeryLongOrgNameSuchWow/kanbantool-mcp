@@ -1,6 +1,6 @@
 """Console script entry point for kanbantool-mcp.
 
-Two modes:
+Three modes:
 
 - Default (no args): runs the FastMCP stdio server. The MCP client launches
   this and talks JSON-RPC over the process's stdin/stdout.
@@ -8,11 +8,12 @@ Two modes:
   signal, and exits. Intended as the first thing you run after wiring the
   server into an MCP client to confirm the token resolves and the network
   reaches Kanban Tool. Exits 0 on success, non-zero on failure.
+- ``--version``: prints the installed package version and exits.
 
-``--check`` is a flag, not a subcommand, on purpose: it keeps the v1.0 CLI
-surface tight (one entry point, one optional behavior switch). Adding a
-subcommand would imply more subcommands later — we'd rather grow that
-surface only if real demand shows up.
+``--check`` and ``--version`` are flags, not subcommands, on purpose: they
+keep the v1.0 CLI surface tight (one entry point, two optional behavior
+switches). Adding a subcommand would imply more subcommands later — we'd
+rather grow that surface only if real demand shows up.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 import httpx
 
@@ -28,6 +30,20 @@ from .config import Config
 from .exceptions import KanbanToolPermissionError, KanbanToolTransportError
 from .models import User
 from .server import run
+
+
+def _resolve_version() -> str:
+    """Return the installed package version, or ``"unknown"`` if the package
+    isn't installed (e.g. running from a checked-out source tree without
+    ``uv pip install -e .``). ``importlib.metadata`` is the canonical source
+    — single source of truth shared with PyPI / wheel metadata, so a
+    release-please version bump on ``__init__.py.__version__`` flows here
+    automatically once the wheel rebuilds."""
+    try:
+        return version("kanbantool-mcp")
+    except PackageNotFoundError:
+        return "unknown"
+
 
 _TOKEN_REGEN_HINT = (
     "https://kanbantool.com/ -> log in -> account avatar -> My profile -> API tokens"
@@ -96,8 +112,14 @@ def main() -> None:
             "MCP server bridging an MCP client (Claude Code, Cursor, etc.) to "
             "the Kanban Tool API v3. With no flags, runs the stdio server. "
             "Use --check to validate your env + token before wiring the server "
-            "into a client."
+            "into a client; --version prints the installed package version."
         ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_resolve_version()}",
+        help="Print the installed kanbantool-mcp version and exit.",
     )
     parser.add_argument(
         "--check",
