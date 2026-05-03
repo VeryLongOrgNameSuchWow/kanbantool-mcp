@@ -174,6 +174,20 @@ def _output_schema(return_type: Any) -> dict[str, Any]:
     return wrapped
 
 
+_IntFallbackT = TypeVar("_IntFallbackT")
+
+
+def _int_or(value: Any, fallback: _IntFallbackT) -> int | _IntFallbackT:
+    """Return ``value`` if it's an ``int``, else ``fallback``. Used to
+    sanitize numeric fields off the API's pagination envelope where any
+    field may be missing or non-int — keeps the call sites focused on
+    *what* they're reading rather than re-checking the type each time.
+
+    The return type narrows on the fallback so e.g. ``_int_or(x, None)``
+    is ``int | None`` while ``_int_or(x, 1)`` is ``int``."""
+    return value if isinstance(value, int) else fallback
+
+
 # --- Annotation hint constants ----------------------------------------------
 #
 # MCP's ``ToolAnnotations`` lets a server declare invariants the LLM can use
@@ -437,7 +451,7 @@ async def recent_changes(
 _SEARCH_TASKS_MAX_LIMIT = 50
 
 
-@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[Task]))
+@mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(SearchResults))
 @validate_call
 async def search_tasks(
     query: str,
@@ -504,18 +518,13 @@ async def search_tasks(
     # ``has_more=False`` when the envelope is missing or malformed, so
     # callers never get a phantom "more pages exist" signal that would
     # prompt a wasted follow-up request.
-    total_count = pagination.get("results_count")
-    if not isinstance(total_count, int):
-        total_count = None
-    pages_count = pagination.get("pages_count")
-    has_more = isinstance(pages_count, int) and page < pages_count
-    response_page = pagination.get("page")
-    if not isinstance(response_page, int):
-        response_page = page
+    total_count = _int_or(pagination.get("results_count"), None)
+    pages_count = _int_or(pagination.get("pages_count"), None)
+    has_more = pages_count is not None and page < pages_count
     return SearchResults(
         results=tasks,
         total_count=total_count,
-        page=response_page,
+        page=_int_or(pagination.get("page"), page),
         has_more=has_more,
     )
 

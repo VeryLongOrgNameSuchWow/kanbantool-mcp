@@ -102,7 +102,10 @@ def test_computed_fields_surface_in_output_schema(
         "list_boards",
         "list_board_collaborators",
         "list_custom_field_definitions",
-        "search_tasks",
+        # ``search_tasks`` deliberately omitted — it returns a typed
+        # ``SearchResults`` object (already an MCP-valid object schema),
+        # not a bare list, so it does NOT carry the wrap envelope. See
+        # ``test_search_tasks_output_schema_describes_search_results``.
         "recent_changes",
         "list_subtasks",
         "reorder_subtasks",
@@ -131,6 +134,34 @@ def test_list_returning_tools_use_wrap_envelope(
     properties = schema.get("properties", {})
     assert "result" in properties and properties["result"].get("type") == "array", (
         f"{tool_name}.output_schema must wrap as {{result: array}}"
+    )
+
+
+def test_search_tasks_output_schema_describes_search_results(
+    registered_tools: dict[str, Any],
+) -> None:
+    """``search_tasks`` returns a ``SearchResults`` wrapper, not ``list[Task]``
+    — so the output_schema must describe the four wrapper fields, NOT the
+    auto-wrapped ``{"result": [Task...]}`` envelope. Guards against the
+    regression where the decorator's ``output_schema=_output_schema(...)``
+    argument falls out of sync with the function's return type and silently
+    advertises the wrong contract to MCP clients."""
+    tool = registered_tools["search_tasks"]
+    schema = getattr(tool, "output_schema", None)
+    assert schema is not None, "search_tasks must declare an output_schema"
+    properties = _resolve_object_properties(schema)
+    expected = {"results", "total_count", "page", "has_more"}
+    missing = expected - properties.keys()
+    assert not missing, (
+        f"search_tasks.output_schema is missing SearchResults fields {missing!r} "
+        f"(props: {sorted(properties.keys())}). The decorator's output_schema= "
+        f"argument is out of sync with the SearchResults return type."
+    )
+    # Sanity: the wrap-result marker should NOT be present — SearchResults
+    # is already an object, FastMCP only wraps non-objects.
+    assert schema.get("x-fastmcp-wrap-result") is not True, (
+        "search_tasks.output_schema must NOT carry x-fastmcp-wrap-result; "
+        "SearchResults is already type=object."
     )
 
 
