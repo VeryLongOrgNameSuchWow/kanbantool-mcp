@@ -12,6 +12,7 @@ import respx
 
 from kanbantool_mcp import client as client_module
 from kanbantool_mcp.client import KanbanToolClient
+from kanbantool_mcp.exceptions import KanbanToolHTTPError
 
 from .conftest import BASE_URL
 
@@ -62,21 +63,27 @@ def test_valid_level_attaches_stderr_handler(
     assert client_module.logger.level == getattr(logging, level)
 
 
-@pytest.mark.parametrize("level", ["debug", "Info", "trace", "verbose", "", "  "])
-def test_invalid_or_lowercase_level_silently_ignored(
+@pytest.mark.parametrize("level", ["debug", "Info", "warning", "ErRoR"])
+def test_lowercase_or_mixed_case_level_is_accepted(
     monkeypatch: pytest.MonkeyPatch, reload_client_module, level: str
 ) -> None:
-    # Lowercase is rejected because our normalisation upper-cases the env
-    # value but the validator checks against the canonical Python logging
-    # names — so ``debug`` works (we upper it) but a typo like ``trace``
-    # is rejected silently. Adjust if we ever want case-insensitive
-    # acceptance with no upper-casing pass.
-    if level.strip().upper() in {"DEBUG", "INFO"}:
-        # ``debug`` and ``Info`` round-trip through .upper() to valid names
-        monkeypatch.setenv("KANBANTOOL_LOG_LEVEL", level)
-        reload_client_module()
-        assert _kanbantool_handlers(client_module.logger) != []
-        return
+    # The env value is normalised via ``.strip().upper()`` before checking
+    # against the canonical Python logging level names, so ``debug`` /
+    # ``Info`` round-trip to valid handlers. Locked here so a future
+    # refactor that drops the ``.upper()`` pass surfaces immediately.
+    monkeypatch.setenv("KANBANTOOL_LOG_LEVEL", level)
+    reload_client_module()
+    assert _kanbantool_handlers(client_module.logger) != []
+
+
+@pytest.mark.parametrize("level", ["trace", "verbose", "VERBOSE", "", "  ", "9", "info!"])
+def test_unknown_level_silently_ignored(
+    monkeypatch: pytest.MonkeyPatch, reload_client_module, level: str
+) -> None:
+    # Anything outside the canonical logging names — a typo, a spelling
+    # from another framework's level set, an empty string, a numeric
+    # level — falls back to the silent NullHandler. Never break the
+    # server because someone typo'd the env var.
     monkeypatch.setenv("KANBANTOOL_LOG_LEVEL", level)
     reload_client_module()
     assert _kanbantool_handlers(client_module.logger) == []
@@ -181,6 +188,85 @@ async def test_debug_body_excerpt_truncated_to_limit(
     # The status prefix and method are also in the line, so the message is
     # longer than just the body excerpt — but the excerpt itself is capped.
     assert "x" * 201 not in msg
+
+
+async def test_debug_body_excerpt_escapes_control_chars(
+    client: KanbanToolClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    # A response body containing raw CR/LF or ANSI escape sequences could
+    # forge fake log lines or hijack the operator's terminal (e.g.
+    # ``\x1b[2J`` clears the screen). The DEBUG path runs the excerpt
+    # through ``repr()`` so control chars surface as their escape
+    # sequences (``\\r``, ``\\n``, ``\\x1b[2J``) — visible but inert.
+    #
+    # Strict JSON forbids unescaped control chars inside strings (RFC 8259
+    # §7), but a misbehaving upstream proxy or a non-conforming API could
+    # still ship them — this test models that adversarial case. The body
+    # is invalid JSON so ``request()`` raises after the DEBUG log fires,
+    # which is the path we actually want to assert on; we catch the
+    # downstream error and inspect ``caplog``.
+    payload = '"line1\r\nline2 \x1b[2J cleared"'
+    with (
+        caplog.at_level(logging.DEBUG, logger="kanbantool_mcp.client"),
+        respx.mock(assert_all_called=True) as router,
+    ):
+        router.get(f"{BASE_URL}users/current.json").mock(
+            return_value=httpx.Response(200, text=payload),
+        )
+        # Non-JSON body: ``request()`` raises ``KanbanToolHTTPError`` after
+        # the DEBUG log has already fired, which is the path we want here.
+        with pytest.raises(KanbanToolHTTPError):
+            await client.request("GET", "users/current")
+
+    debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
+    msg = debug_records[0].getMessage()
+    # The raw control chars must NOT appear unescaped in the rendered line.
+    assert "\r" not in msg
+    assert "\n" not in msg
+    assert "\x1b" not in msg
+    # The escaped form is present (locks the chosen ``repr()`` strategy —
+    # if a future refactor switches to a different escaper, update this).
+    assert "\\r" in msg
+    assert "\\n" in msg
+    assert "\\x1b" in msg
+
+
+async def _noop_async_sleep(_: float) -> None:
+    """Drop-in replacement for ``asyncio.sleep`` so retry tests don't pay
+    wall-clock latency. Mirrors the signature so monkeypatching is safe."""
+
+
+async def test_debug_logs_post_retry_response_not_intermediate_5xx(
+    client: KanbanToolClient, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The retry block (PR #145) sits BETWEEN the INFO log and the DEBUG
+    # log inside ``request()``. After a GET 5xx → retry → 200, only the
+    # final response should land in the DEBUG log; the intermediate 503
+    # is invisible (correct: we'd otherwise mislead an operator into
+    # thinking the call failed when it actually succeeded on retry).
+    monkeypatch.setattr("kanbantool_mcp.client.asyncio.sleep", _noop_async_sleep)
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="kanbantool_mcp.client"),
+        respx.mock(assert_all_called=True) as router,
+    ):
+        router.get(f"{BASE_URL}users/current.json").mock(
+            side_effect=[
+                httpx.Response(503, text="upstream blip"),
+                httpx.Response(200, json={"id": 1, "name": "Alice"}),
+            ]
+        )
+        await client.request("GET", "users/current")
+
+    debug_records = [r for r in caplog.records if r.levelno == logging.DEBUG]
+    assert len(debug_records) == 1
+    msg = debug_records[0].getMessage()
+    assert "[200]" in msg
+    assert "Alice" in msg
+    # The intermediate 503 body must not surface — only the post-retry
+    # response is logged.
+    assert "[503]" not in msg
+    assert "upstream blip" not in msg
 
 
 async def test_default_silent_mode_emits_no_records(
