@@ -94,16 +94,8 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
 
 mcp: FastMCP = FastMCP("kanbantool-mcp", instructions=_SERVER_INSTRUCTIONS)
 
-# ``KANBANTOOL_READ_ONLY=1`` (or true/yes/on) gates every state-mutating tool —
-# create/update/move/archive/delete + subtask write tools + timer start/stop/delete +
-# set_custom_field + add/delete_comment. The 11 names in ``READ_ONLY_TOOLS`` stay
-# registered. ``ping`` is always registered (transport smoke test, no API calls).
-#
-# Read at import time, not inside ``Config.from_env()``: tool registration
-# happens during decorator evaluation at import, so the gate must be settled
-# before the @mcp.tool decorators run. ``Config.from_env()`` is lazy and
-# requires KANBANTOOL_API_TOKEN to be set, which is the wrong precondition for
-# choosing how to register tools.
+# Read at import time, not via Config.from_env(): @mcp.tool decorators
+# evaluate at import, so the gate must be settled before they run.
 _READ_ONLY_MODE = env_flag("KANBANTOOL_READ_ONLY")
 
 

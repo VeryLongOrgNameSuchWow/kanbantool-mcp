@@ -4,7 +4,7 @@ The flag is read at module import time (decorators evaluate during import,
 so the read/write split must be settled by then). Each test reloads the
 ``server`` module under a fresh env to assert a specific registration
 outcome, then reloads it back to default state to keep the rest of the
-suite working against the full 25-tool surface.
+suite working against the full 26-tool surface.
 """
 
 from __future__ import annotations
@@ -68,10 +68,12 @@ def test_read_only_constant_lists_eleven_tools() -> None:
 
 
 def test_default_mode_registers_full_tool_surface() -> None:
-    # Sanity check on the default-state baseline: 11 reads + 14 writes + ping.
-    assert _registered_tool_names() >= EXPECTED_READ_ONLY_TOOLS
-    assert "create_task" in _registered_tool_names()
-    assert "delete_subtask" in _registered_tool_names()
+    # Locks the canonical 26-tool count (11 reads + 14 writes + ping).
+    names = _registered_tool_names()
+    assert len(names) == 26
+    assert names >= EXPECTED_READ_ONLY_TOOLS
+    assert "create_task" in names
+    assert "delete_subtask" in names
 
 
 @pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on", "TRUE", "On"])
