@@ -1,6 +1,6 @@
 # kanbantool-mcp
 
-> An MCP (Model Context Protocol) server bridging an MCP-aware LLM client (Claude Code, Claude Desktop, Cursor, Continue, Cline, ...) with a [Kanban Tool](https://kanbantool.com/) account over the Kanban Tool API v3. Read tasks/boards, write tasks/comments/subtasks, track time — all via 25 typed tools the LLM calls directly.
+> An MCP (Model Context Protocol) server bridging an MCP-aware LLM client (Claude Code, Claude Desktop, Cursor, Continue, Cline, ...) with a [Kanban Tool](https://kanbantool.com/) account over the Kanban Tool API v3. Read tasks/boards, write tasks/comments/subtasks, track time — all via 26 typed tools the LLM calls directly.
 
 This file is the LLM-friendly map of the project: the tool surface, the
 quirks of the underlying API that shape how an agent should reach for these
@@ -10,7 +10,7 @@ lives in `instructions=` on the FastMCP server (in `src/kanbantool_mcp/server.py
 
 ## Tool surface
 
-25 tools, three families:
+26 tools, three families:
 
 - **Read** — `list_boards`, `get_board`, `get_task`, `search_tasks`, `recent_changes`, `whoami`, `get_user`, `list_board_collaborators`, `list_subtasks`, `list_custom_field_definitions`, `list_my_timers`, `ping`.
 - **Write** — `create_task`, `update_task`, `move_task`, `archive_task`, `set_custom_field`, `add_comment`, `delete_comment`, `add_subtask`, `update_subtask`, `delete_subtask`, `reorder_subtasks`.
