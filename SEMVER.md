@@ -47,9 +47,11 @@ Breaking any of them requires a major bump.
    the contract. Removing or renaming them is a major. The MRO between
    them is also stable — anyone catching `KanbanToolHTTPError` should
    continue to catch `KanbanToolValidationError` (a subclass) too.
-5. **Environment variable names.** `KANBANTOOL_DOMAIN` and
-   `KANBANTOOL_API_TOKEN` are the configuration contract. Renaming or
-   adding a required env var is a major.
+5. **Environment variable names.** `KANBANTOOL_DOMAIN`,
+   `KANBANTOOL_API_TOKEN`, and `KANBANTOOL_READ_ONLY` are the
+   configuration contract. Renaming an existing env var, or adding a
+   new *required* one, is a major bump. Adding a new *optional* env
+   var (defaulting to current behaviour) is a minor.
 
 ### Unstable surfaces
 

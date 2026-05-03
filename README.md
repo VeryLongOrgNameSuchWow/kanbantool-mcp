@@ -15,7 +15,7 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 
 ## Status
 
-**Alpha, approaching v1.0.** The 25-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades. See [SEMVER.md](SEMVER.md) for the v1.0 stability commitment (which surfaces are stable, which are not, deprecation policy).
+**Alpha, approaching v1.0.** The 26-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades. See [SEMVER.md](SEMVER.md) for the v1.0 stability commitment (which surfaces are stable, which are not, deprecation policy).
 
 ## Roadmap & support
 
@@ -45,12 +45,13 @@ Longer end-to-end walkthroughs (with realistic JSON request/response shapes) liv
 
 ### Configuration
 
-Two environment variables, regardless of how you launch the server:
-
 | Variable | What it is | Where to get it |
 | --- | --- | --- |
 | `KANBANTOOL_DOMAIN` | Your account's subdomain prefix — `acme` for `https://acme.kanbantool.com`. | The URL you log into. |
 | `KANBANTOOL_API_TOKEN` | Bearer token for the Kanban Tool API v3. | Profile -> API tokens in your Kanban Tool account. |
+| `KANBANTOOL_READ_ONLY` | Optional. Set to `1` (or `true`/`yes`/`on`) to register only the 11 read-class tools — see [Read-only mode](#read-only-mode) below. | — |
+
+The first two are required; the third is optional and unset by default.
 
 ### Wiring it into your client
 
@@ -160,6 +161,25 @@ KANBANTOOL_DOMAIN=your-account \
   KANBANTOOL_API_TOKEN=your-token \
   uvx kanbantool-mcp
 ```
+
+### Read-only mode
+
+Set `KANBANTOOL_READ_ONLY=1` (or `true`/`yes`/`on`) to register **only the 11 read-class tools**. Any value outside that set, including the empty string, leaves the full 26-tool surface intact.
+
+Use this when you want to give an LLM safe access to your boards — search, browse, summarise, answer questions about state — without giving it the ability to create, update, move, archive, comment on, or delete anything. The write tools simply don't appear in the tool list, so the model can't call them even if it tried.
+
+**Read-class tools (always registered):**
+
+```
+list_boards            get_board                       get_user
+search_tasks           list_board_collaborators        whoami
+get_task               list_custom_field_definitions   list_my_timers
+recent_changes         list_subtasks
+```
+
+**Write tools (suppressed when read-only):** `create_task`, `update_task`, `move_task`, `archive_task`, `set_custom_field`, `add_comment`, `delete_comment`, `add_subtask`, `update_subtask`, `delete_subtask`, `reorder_subtasks`, `start_timer`, `stop_timer`, `delete_timer`.
+
+The transport smoke test `ping` is always registered regardless of mode.
 
 ### Verify your install
 
