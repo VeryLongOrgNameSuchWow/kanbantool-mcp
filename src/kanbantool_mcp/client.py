@@ -38,6 +38,13 @@ _RETRYABLE_STATUS_CODES = frozenset({429, *range(500, 600)})
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+\S+")
 
 
+def _wrap_transport_error(error: httpx.TransportError) -> KanbanToolTransportError:
+    """Wrap a raw httpx ``TransportError`` in our typed exception. Shared by
+    both retry sites in ``request()`` so the exception-message shape stays
+    consistent."""
+    return KanbanToolTransportError(f"Transport error contacting Kanban Tool API: {error}")
+
+
 def _retry_delay_for(response: httpx.Response) -> float | None:
     """Return the delay (seconds) before retrying ``response``, or ``None`` if
     it should NOT be retried.
@@ -217,15 +224,9 @@ class KanbanToolClient:
             try:
                 response = await self._http.request(method, normalized, **kwargs)
             except httpx.TransportError as second_error:
-                raise KanbanToolTransportError(
-                    f"Transport error contacting Kanban Tool API: {second_error}"
-                ) from second_error
+                raise _wrap_transport_error(second_error) from second_error
 
-        # GET-only retry on transient HTTP responses (429 + 5xx). Writes
-        # (POST/PUT/PATCH/DELETE) are intentionally NOT retried — see the
-        # _RETRYABLE_STATUS_CODES rationale at module scope. One retry per
-        # error class: if the second attempt also returns 429/5xx (or any
-        # other error), it propagates through ``_raise_for_status`` below.
+        # GET-only — see _RETRYABLE_STATUS_CODES rationale at module scope.
         if method.upper() == "GET":
             retry_delay = _retry_delay_for(response)
             if retry_delay is not None:
@@ -233,9 +234,7 @@ class KanbanToolClient:
                 try:
                     response = await self._http.request(method, normalized, **kwargs)
                 except httpx.TransportError as transport_error:
-                    raise KanbanToolTransportError(
-                        f"Transport error contacting Kanban Tool API: {transport_error}"
-                    ) from transport_error
+                    raise _wrap_transport_error(transport_error) from transport_error
 
         _raise_for_status(response, method, normalized)
 

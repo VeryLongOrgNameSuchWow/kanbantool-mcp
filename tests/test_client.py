@@ -369,20 +369,25 @@ async def test_writes_do_not_retry_on_429(
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
-@pytest.mark.parametrize("status", [500, 502, 503, 504])
 async def test_writes_do_not_retry_on_5xx(
-    method: str, status: int, client: KanbanToolClient, recorded_sleeps: list[float]
+    method: str, client: KanbanToolClient, recorded_sleeps: list[float]
 ) -> None:
     """Critical: a transient 503 from a write that *did* land server-side
     must NOT retry — that would double-create the resource. Kanban Tool has
-    no idempotency-key support, so this is enforced client-side."""
+    no idempotency-key support, so this is enforced client-side.
+
+    Parametrized over write verbs only. The status-code branch (which 5xx
+    values count as retryable) is exercised by ``_RETRYABLE_STATUS_CODES``
+    and ``test_get_retries_once_on_503`` on the GET side; here the
+    load-bearing assertion is the GET-only gate, so one canonical 5xx (503)
+    per verb is enough."""
     with respx.mock() as router:
         route = router.request(method, f"{BASE_URL}tasks/1.json").mock(
-            return_value=httpx.Response(status, text="upstream busy")
+            return_value=httpx.Response(503, text="upstream busy")
         )
         with pytest.raises(KanbanToolHTTPError) as exc_info:
             await client.request(method, "tasks/1")
-        assert exc_info.value.status_code == status
+        assert exc_info.value.status_code == 503
         assert route.call_count == 1
         assert recorded_sleeps == []
 
