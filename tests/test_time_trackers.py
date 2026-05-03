@@ -130,13 +130,79 @@ async def test_start_timer_body_has_no_envelope(_inject_client: KanbanToolClient
 
 async def test_start_timer_rejects_non_positive_ids(_inject_client: KanbanToolClient) -> None:
     """``validate_call`` enforces ``ge=1`` on both args so we never hit the
-    API with bogus ids that would 404 confusingly."""
+    API with bogus ids that would 404 confusingly. ``board_id`` is now
+    optional but the ``ge=1`` constraint still rejects 0 / negatives when
+    explicitly provided."""
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
         await start_timer(task_id=0, board_id=1)
     with pytest.raises(ValidationError):
         await start_timer(task_id=1, board_id=0)
+
+
+async def test_start_timer_resolves_board_id_via_get_task(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """Omitting ``board_id`` resolves it via an internal ``get_task`` call.
+    One extra HTTP round-trip; the resulting POST body still carries both
+    ids so the API contract is unchanged."""
+    task_payload = {"id": 50000, "name": "task with timers", "board_id": 4711}
+    response = _timer_payload(id=999, board_id=4711, task_id=50000)
+    with respx.mock(assert_all_called=True) as router:
+        get_task_route = router.get(f"{BASE_URL}tasks/50000.json").mock(
+            return_value=httpx.Response(200, json=task_payload)
+        )
+        post_timer_route = router.post(TIMERS_URL).mock(
+            return_value=httpx.Response(200, json=response)
+        )
+        result = await start_timer(task_id=50000)
+
+    assert isinstance(result, TimeTracker)
+    assert result.id == 999
+    # Both the resolution call and the create call must have fired.
+    assert get_task_route.called
+    assert post_timer_route.called
+    # The POST body carries the resolved board_id from the get_task response.
+    body = _request_body(post_timer_route)
+    assert body == {"board_id": 4711, "task_id": 50000}
+
+
+async def test_start_timer_skips_get_task_when_board_id_passed(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """When ``board_id`` is supplied explicitly, no ``get_task`` round-trip
+    happens — preserves the original single-call cost for callers that
+    already know the board id."""
+    response = _timer_payload(id=999, board_id=4711, task_id=50000)
+    with respx.mock(assert_all_called=True) as router:
+        # Asserting assert_all_called=True with NO get_task route registered
+        # would fail spuriously if the tool tried to call it; mocking the
+        # post route only is enough for the negative assertion via the
+        # respx behavior of raising on unmatched requests.
+        post_timer_route = router.post(TIMERS_URL).mock(
+            return_value=httpx.Response(200, json=response)
+        )
+        await start_timer(task_id=50000, board_id=4711)
+
+    assert post_timer_route.call_count == 1
+
+
+async def test_start_timer_raises_when_get_task_omits_board_id(
+    _inject_client: KanbanToolClient,
+) -> None:
+    """If ``get_task`` returns a Task whose ``board_id`` is ``None`` (the
+    detail endpoint should always populate it; this is a defensive guard
+    for the malformed/edge case), surface a ``ValueError`` rather than
+    sending a degenerate request."""
+    # ``board_id`` deliberately absent from the response.
+    task_payload = {"id": 50000, "name": "task with no board"}
+    with respx.mock(assert_all_called=True) as router:
+        router.get(f"{BASE_URL}tasks/50000.json").mock(
+            return_value=httpx.Response(200, json=task_payload)
+        )
+        with pytest.raises(ValueError, match=r"resolve board_id.*Pass board_id"):
+            await start_timer(task_id=50000)
 
 
 async def test_start_timer_404_raises_http_error(_inject_client: KanbanToolClient) -> None:

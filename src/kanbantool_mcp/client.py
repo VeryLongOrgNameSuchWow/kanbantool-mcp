@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 from typing import Any
 
@@ -20,7 +21,66 @@ from .exceptions import (
 _BODY_EXCERPT_LIMIT = 200
 _RETRY_BACKOFF_SECONDS = 0.5
 
+# Retry policy for transient HTTP responses on idempotent reads. GET-only on
+# purpose — POST/PUT/PATCH/DELETE are NOT retried even on 429/5xx, because the
+# Kanban Tool API has no idempotency-key support, so a transient 503 from a
+# write that *did* land server-side would, on retry, double-create the
+# resource. At-most-once write semantics are the right default; the agent
+# (LLM) can decide whether to re-issue a failed write itself.
+_RETRY_5XX_DELAY_SECONDS = 0.5
+_RETRY_429_DEFAULT_DELAY_SECONDS = 1.0
+# ``Retry-After`` is honored on 429, but capped — a 60s server response would
+# block the LLM for a minute, which is a worse experience than surfacing the
+# typed error and letting the agent decide. Anything longer than this surfaces
+# as ``KanbanToolHTTPError(429)`` immediately.
+_RETRY_AFTER_CAP_SECONDS = 5.0
+_RETRYABLE_STATUS_CODES = frozenset({429, *range(500, 600)})
+
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+\S+")
+
+
+def _wrap_transport_error(error: httpx.TransportError) -> KanbanToolTransportError:
+    """Wrap a raw httpx ``TransportError`` in our typed exception. Shared by
+    both retry sites in ``request()`` so the exception-message shape stays
+    consistent."""
+    return KanbanToolTransportError(f"Transport error contacting Kanban Tool API: {error}")
+
+
+def _retry_delay_for(response: httpx.Response) -> float | None:
+    """Return the delay (seconds) before retrying ``response``, or ``None`` if
+    it should NOT be retried.
+
+    Caller is responsible for the GET-only / one-retry-per-class policy; this
+    helper only inspects the response itself. Returns ``None`` for any 429
+    where ``Retry-After`` exceeds the cap, so the caller surfaces the typed
+    error rather than blocking the LLM for a long server-suggested wait."""
+    status = response.status_code
+    if status not in _RETRYABLE_STATUS_CODES:
+        return None
+    if status == 429:
+        retry_after_raw = response.headers.get("Retry-After")
+        if retry_after_raw is None:
+            return _RETRY_429_DEFAULT_DELAY_SECONDS
+        try:
+            requested = float(retry_after_raw)
+        except ValueError:
+            # ``Retry-After`` may legally be an HTTP-date; we don't parse those
+            # (Kanban Tool's API uses delta-seconds). Fall back to the default
+            # rather than waiting forever.
+            return _RETRY_429_DEFAULT_DELAY_SECONDS
+        # ``float()`` accepts ``"NaN"`` / ``"inf"`` / ``"-inf"``. NaN
+        # comparisons are always False, so a ``Retry-After: NaN`` would slip
+        # past the cap check and ``max(0.0, nan)`` would resolve to 0 (or
+        # NaN, depending on the Python build) — effectively "sleep zero,
+        # retry immediately". Treat any non-finite value the same as an
+        # unparseable header: fall back to the default delay.
+        if not math.isfinite(requested):
+            return _RETRY_429_DEFAULT_DELAY_SECONDS
+        if requested > _RETRY_AFTER_CAP_SECONDS:
+            return None
+        return max(0.0, requested)
+    # 5xx
+    return _RETRY_5XX_DELAY_SECONDS
 
 
 def _scrub_secrets(text: str) -> str:
@@ -173,9 +233,17 @@ class KanbanToolClient:
             try:
                 response = await self._http.request(method, normalized, **kwargs)
             except httpx.TransportError as second_error:
-                raise KanbanToolTransportError(
-                    f"Transport error contacting Kanban Tool API: {second_error}"
-                ) from second_error
+                raise _wrap_transport_error(second_error) from second_error
+
+        # GET-only — see _RETRYABLE_STATUS_CODES rationale at module scope.
+        if method.upper() == "GET":
+            retry_delay = _retry_delay_for(response)
+            if retry_delay is not None:
+                await asyncio.sleep(retry_delay)
+                try:
+                    response = await self._http.request(method, normalized, **kwargs)
+                except httpx.TransportError as transport_error:
+                    raise _wrap_transport_error(transport_error) from transport_error
 
         _raise_for_status(response, method, normalized)
 
