@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.8.2...v0.8.3) (2026-05-03)
+
+
+### Documentation
+
+* document board lifecycle as out-of-scope (no upstream endpoints) ([#164](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/164)) ([ef9eefb](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/ef9eefb71869baf741de162edddacdd3926e0c66))
+
 ## [0.8.2](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.8.1...v0.8.2) (2026-05-03)
 
 
