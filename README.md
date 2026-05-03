@@ -54,41 +54,34 @@ Two environment variables, regardless of how you launch the server:
 
 ### Wiring it into your client
 
-The `mcp.json` payload is the same across clients; only the file location and UI for editing it differ. See your client's docs for where the config lives:
+The JSON shape is the same across MCP clients — only the file location and the launcher CLI differ. Pick your client below, drop the snippet into the matching `mcp.json`, and substitute your `KANBANTOOL_DOMAIN` / `KANBANTOOL_API_TOKEN` values.
 
-| Client | Setup docs |
-| --- | --- |
-| Claude Desktop | <https://modelcontextprotocol.io/quickstart/user> |
-| Cursor | <https://cursor.com/docs/mcp> |
-| Cline | <https://docs.cline.bot/mcp/configuring-mcp-servers> |
-| Continue | <https://docs.continue.dev/customize/deep-dives/mcp> |
-
-Drop one of the snippets below into wherever your client expects MCP server configuration.
-
-### From git (current)
-
-Add to your MCP client's `mcp.json`:
+Each snippet shows the **PyPI** form (`uvx kanbantool-mcp`) — swap the `args` for the **git form** below if you want to track `main` instead of a release:
 
 ```json
-{
-  "mcpServers": {
-    "kanbantool": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp",
-        "kanbantool-mcp"
-      ],
-      "env": {
-        "KANBANTOOL_DOMAIN": "your-account",
-        "KANBANTOOL_API_TOKEN": "your-token"
-      }
-    }
-  }
-}
+"args": ["--from", "git+https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp", "kanbantool-mcp"]
 ```
 
-### From PyPI
+#### Claude Code
+
+Easiest path is the CLI:
+
+```sh
+claude mcp add-json kanbantool '{
+  "command": "uvx",
+  "args": ["kanbantool-mcp"],
+  "env": {
+    "KANBANTOOL_DOMAIN": "your-account",
+    "KANBANTOOL_API_TOKEN": "your-token"
+  }
+}'
+```
+
+Or edit `~/.claude.json` (project-scoped via `claude mcp add-json -s project ...`). See <https://docs.claude.com/en/docs/claude-code/mcp> for scopes.
+
+#### Claude Desktop
+
+Edit the config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows). Setup docs: <https://modelcontextprotocol.io/quickstart/user>.
 
 ```json
 {
@@ -105,9 +98,82 @@ Add to your MCP client's `mcp.json`:
 }
 ```
 
+#### Cursor
+
+Edit `~/.cursor/mcp.json` (or per-project `.cursor/mcp.json`). Setup docs: <https://cursor.com/docs/mcp>.
+
+```json
+{
+  "mcpServers": {
+    "kanbantool": {
+      "command": "uvx",
+      "args": ["kanbantool-mcp"],
+      "env": {
+        "KANBANTOOL_DOMAIN": "your-account",
+        "KANBANTOOL_API_TOKEN": "your-token"
+      }
+    }
+  }
+}
+```
+
+#### Continue
+
+Edit `~/.continue/config.yaml` (Continue uses YAML, not JSON, for MCP entries). Setup docs: <https://docs.continue.dev/customize/deep-dives/mcp>.
+
+```yaml
+mcpServers:
+  - name: kanbantool
+    command: uvx
+    args:
+      - kanbantool-mcp
+    env:
+      KANBANTOOL_DOMAIN: your-account
+      KANBANTOOL_API_TOKEN: your-token
+```
+
+#### Cline
+
+Edit `cline_mcp_settings.json` via the Cline panel's MCP Servers > Edit Config button. Setup docs: <https://docs.cline.bot/mcp/configuring-mcp-servers>.
+
+```json
+{
+  "mcpServers": {
+    "kanbantool": {
+      "command": "uvx",
+      "args": ["kanbantool-mcp"],
+      "env": {
+        "KANBANTOOL_DOMAIN": "your-account",
+        "KANBANTOOL_API_TOKEN": "your-token"
+      }
+    }
+  }
+}
+```
+
+#### Generic MCP-over-stdio
+
+Any MCP client that supports launching a stdio server. Spawn this command with the env vars set in the child process; the server speaks JSON-RPC on stdin/stdout.
+
+```sh
+KANBANTOOL_DOMAIN=your-account \
+  KANBANTOOL_API_TOKEN=your-token \
+  uvx kanbantool-mcp
+```
+
 ### Verify your install
 
-After wiring the server into your client, ask the assistant **"who am I?"** — it'll call the `whoami` tool and confirm your token resolves to your Kanban Tool account. If that comes back with your name and email, the server is reachable and your credentials work.
+Run `kanbantool-mcp --check` (e.g. `uvx kanbantool-mcp --check`) — it validates your env vars, hits the `whoami` endpoint, and prints a one-line OK/FAIL signal. Sample success output:
+
+```
+OK: Alice Example (your-account) — token resolves; you can use kanbantool-mcp now
+```
+
+The flag exits 0 on success and non-zero on failure (missing env, 401/403 auth, network failure), with an actionable hint per error class. Run it once after wiring the server into your client to confirm the token reaches Kanban Tool **before** asking your assistant to do anything with it.
+
+To check which version you have installed, run `kanbantool-mcp --version` (e.g. `uvx kanbantool-mcp --version`). Useful when reporting an issue.
+
+You can also verify from inside the assistant: ask **"who am I?"** — it'll call the `whoami` tool and confirm your token resolves. If that comes back with your name, the server is reachable and your credentials work.
 
 ## Tool reference
 
