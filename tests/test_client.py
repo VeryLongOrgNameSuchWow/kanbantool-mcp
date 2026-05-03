@@ -426,3 +426,63 @@ async def test_get_retry_then_transport_error_raises_transport_error(
         assert isinstance(exc_info.value.__cause__, httpx.TransportError)
         # The 5xx-retry sleep happened before the connect error was raised.
         assert recorded_sleeps == [0.5]
+
+
+@pytest.mark.parametrize("non_finite", ["NaN", "nan", "inf", "-inf", "Infinity"])
+async def test_get_429_non_finite_retry_after_uses_default_delay(
+    non_finite: str, client: KanbanToolClient, recorded_sleeps: list[float]
+) -> None:
+    """``float()`` accepts ``"NaN"`` / ``"inf"`` / ``"-inf"`` — but those
+    bypass the cap check (NaN comparisons are always False; -inf would
+    sleep zero) and would produce surprising behavior. Treat any non-finite
+    value the same as an unparseable header: fall back to the default
+    1s delay rather than retrying immediately or skipping the cap."""
+    with respx.mock() as router:
+        route = router.get(f"{BASE_URL}users/current.json").mock(
+            side_effect=[
+                httpx.Response(429, headers={"Retry-After": non_finite}),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        result = await client.request("GET", "users/current")
+        assert result == {"ok": True}
+        assert route.call_count == 2
+        assert recorded_sleeps == [1.0]
+
+
+@pytest.mark.parametrize("method", ["get", "Get", "gEt"])
+async def test_lowercase_get_methods_still_retry(
+    method: str, client: KanbanToolClient, recorded_sleeps: list[float]
+) -> None:
+    """The GET-only gate uses ``method.upper()`` so callers passing
+    ``"get"`` / ``"Get"`` / ``"gEt"`` still benefit from the retry policy.
+    Locks the case-insensitive contract."""
+    with respx.mock() as router:
+        route = router.get(f"{BASE_URL}users/current.json").mock(
+            side_effect=[
+                httpx.Response(503, text="boom"),
+                httpx.Response(200, json={"ok": True}),
+            ]
+        )
+        result = await client.request(method, "users/current")
+        assert result == {"ok": True}
+        assert route.call_count == 2
+        assert recorded_sleeps == [0.5]
+
+
+@pytest.mark.parametrize("method", ["post", "Post", "pOsT", "patch", "PUT", "delete"])
+async def test_lowercase_write_methods_still_skip_retry(
+    method: str, client: KanbanToolClient, recorded_sleeps: list[float]
+) -> None:
+    """Counterpart of the GET case-insensitive test: writes in any case
+    must NOT retry on 5xx — the at-most-once write guarantee can't depend
+    on the caller normalizing the verb."""
+    with respx.mock() as router:
+        route = router.request(method.upper(), f"{BASE_URL}tasks/1.json").mock(
+            return_value=httpx.Response(503, text="upstream busy")
+        )
+        with pytest.raises(KanbanToolHTTPError) as exc_info:
+            await client.request(method, "tasks/1")
+        assert exc_info.value.status_code == 503
+        assert route.call_count == 1
+        assert recorded_sleeps == []

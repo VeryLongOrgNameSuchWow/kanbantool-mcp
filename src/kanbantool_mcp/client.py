@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 from typing import Any
 
@@ -66,6 +67,14 @@ def _retry_delay_for(response: httpx.Response) -> float | None:
             # ``Retry-After`` may legally be an HTTP-date; we don't parse those
             # (Kanban Tool's API uses delta-seconds). Fall back to the default
             # rather than waiting forever.
+            return _RETRY_429_DEFAULT_DELAY_SECONDS
+        # ``float()`` accepts ``"NaN"`` / ``"inf"`` / ``"-inf"``. NaN
+        # comparisons are always False, so a ``Retry-After: NaN`` would slip
+        # past the cap check and ``max(0.0, nan)`` would resolve to 0 (or
+        # NaN, depending on the Python build) — effectively "sleep zero,
+        # retry immediately". Treat any non-finite value the same as an
+        # unparseable header: fall back to the default delay.
+        if not math.isfinite(requested):
             return _RETRY_429_DEFAULT_DELAY_SECONDS
         if requested > _RETRY_AFTER_CAP_SECONDS:
             return None
