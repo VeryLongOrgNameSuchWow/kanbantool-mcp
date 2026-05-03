@@ -392,6 +392,26 @@ async def test_writes_do_not_retry_on_5xx(
         assert recorded_sleeps == []
 
 
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+async def test_writes_do_not_retry_on_transport_error(
+    method: str, client: KanbanToolClient, recorded_sleeps: list[float]
+) -> None:
+    """Same at-most-once write semantics as ``test_writes_do_not_retry_on_5xx``,
+    extended to the transport-error retry path: a POST that succeeded
+    server-side but tripped a transport error mid-response must NOT retry,
+    or the server would double-create the resource. The first transport
+    error surfaces immediately as ``KanbanToolTransportError``."""
+    with respx.mock() as router:
+        route = router.request(method, f"{BASE_URL}tasks/1.json").mock(
+            side_effect=httpx.ConnectError("boom")
+        )
+        with pytest.raises(KanbanToolTransportError) as exc_info:
+            await client.request(method, "tasks/1")
+        assert isinstance(exc_info.value.__cause__, httpx.TransportError)
+        assert route.call_count == 1
+        assert recorded_sleeps == []
+
+
 async def test_get_retries_only_on_429_and_5xx_not_on_other_4xx(
     client: KanbanToolClient, recorded_sleeps: list[float]
 ) -> None:
