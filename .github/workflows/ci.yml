@@ -25,6 +25,16 @@ jobs:
       - run: uv sync --dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - if: matrix.python-version == '3.13'
-        run: uv run ty check
-      - run: uv run pytest
+      - run: uv run ty check
+      - run: uv run pytest -q --cov=src/kanbantool_mcp --cov-report=term-missing --cov-report=json:coverage.json
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage.json ]; then
+            pct=$(jq -r '.totals.percent_covered_display' coverage.json)
+            {
+              echo "## Coverage (Python ${{ matrix.python-version }})"
+              echo ""
+              echo "**${pct}%** lines covered"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
