@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.8.0...v0.8.1) (2026-05-03)
+
+
+### Documentation
+
+* promote two implicit principles + add tool-surface drift note ([#159](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/159)) ([0938955](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/0938955a9bffbc146b2c831516baa1e5e107d78a))
+
 ## [0.8.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.7.2...v0.8.0) (2026-05-03)
 
 
