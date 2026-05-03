@@ -61,7 +61,9 @@ M5 — Custom-field writes & comment polish:
 - Bearer-token auth.
 - Every endpoint requires a `.json` extension in the path (e.g. `/boards/123.json`, not `/boards/123`).
 - No "list all boards" endpoint. Read `boards[]` from `/users/current.json` instead.
+- **No board write endpoints.** No `POST /boards`, no `PUT/PATCH /boards/{id}`, no `DELETE /boards/{id}` — boards are read-only on the API surface; lifecycle (create/rename/archive) is web-UI only. Live-spike-confirmed (#130, every variant 404 against rynbou.kanbantool.com). Same for column/swimlane structure (`workflow_stages`, `swimlanes`). When asked for a `create_board` / `update_board` / `archive_board` tool, the answer is "the upstream API doesn't expose it" — don't ship sham tools that wrap a guaranteed-404. README and `llms.txt` document the gap explicitly.
 - No webhook support. Polling `/boards/:id/changelog.json` is the only way to detect changes.
+- No comment-edit endpoint. `delete_comment` + `add_comment` is the supported "fix a comment" pattern.
 - `search_tasks` accepts a rich DSL — preserve the user's query string verbatim and pass through.
 
 ## Phases

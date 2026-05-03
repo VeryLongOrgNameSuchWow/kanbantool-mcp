@@ -18,7 +18,7 @@ lives in `instructions=` on the FastMCP server (in `src/kanbantool_mcp/server.py
 
 Per-tool docstrings (the LLM-visible prompts) live in `src/kanbantool_mcp/server.py`.
 
-## Quirks (the 6 things that shape agent behavior)
+## Quirks (the 7 things that shape agent behavior)
 
 These are non-obvious behaviors of the Kanban Tool API or this server's
 translation layer. An agent reaching for these tools should know them; an
@@ -90,6 +90,23 @@ no idempotency-key support, so a transient 503 from a write that
 landed server-side would double-create on retry. The agent decides
 whether to re-issue a failed write itself (typically by searching
 for the resource first to see if it landed).
+
+### 7. Boards are read-only on the API; lifecycle is web-UI only
+
+The Kanban Tool API v3 exposes no write endpoints for boards — no
+`POST /boards`, no `PUT/PATCH /boards/{id}`, no `DELETE /boards/{id}`.
+There is therefore no `create_board` / `update_board` /
+`archive_board` MCP tool, and there will not be one until the
+upstream API gains these endpoints. Verified via live spike against
+the API (every variant returns 404; see issue #130). Same goes for
+column / swimlane structure: `Board.columns` and `Board.swimlanes`
+are read-only.
+
+When a user asks to "make a new board" or "rename this board", say
+so directly: the operation must be performed in the
+[Kanban Tool web UI](https://kanbantool.com/), and once it lands
+the MCP can read the result via `list_boards` / `get_board`. Do
+not invent a tool call or attempt a workaround.
 
 ## Examples
 

@@ -228,6 +228,18 @@ You can also verify from inside the assistant: ask **"who am I?"** — it'll cal
 
 (`ping` exists as a transport smoke test; not listed above.)
 
+## What this server does *not* cover
+
+The tool surface is bounded by what the [Kanban Tool API v3](https://kanbantool.com/developer/api-v3) actually exposes. A few common workflows are intentionally absent because there is no upstream endpoint to call:
+
+- **Board lifecycle.** The API has no `POST /boards`, `PUT /boards/{id}`, or `DELETE /boards/{id}` — boards must be created, renamed, and archived through the [Kanban Tool web UI](https://kanbantool.com/), not via the MCP. `list_boards` and `get_board` are the only board-scoped surfaces. Verified via live spike against the API (every variant returns 404; see [#130](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/130)). Provision the board out-of-band first, then point the LLM at it.
+- **Column / swimlane structure.** `Board.columns` and `Board.swimlanes` are read-only on the wire. Re-shape your workflow in the web UI; the MCP can read the result but not edit it.
+- **Comment editing.** The API has no comment-edit endpoint. `delete_comment` + `add_comment` is the supported "fix a comment" pattern.
+- **Webhooks.** Kanban Tool ships none. `recent_changes(board_id, since)` is the polling primitive that stands in.
+- **Bulk user listing.** No global `/users` endpoint. `list_board_collaborators(board_id)` is the canonical user-discovery surface (per board).
+
+Per the project's "be honest about the upstream" principle (see [CLAUDE.md](CLAUDE.md)), these gaps are surfaced explicitly rather than papered over with shims.
+
 ## Examples
 
 A short write-flow alongside the read-flow shown above. Illustrative — shape of a session, not literal terminal output. For longer walkthroughs with realistic JSON shapes, see [`examples/`](examples/).
