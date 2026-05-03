@@ -43,6 +43,8 @@ kanbantool-mcp = "kanbantool_mcp.__main__:main"
 dev = [
     "pytest>=8",
     "pytest-asyncio",
+    "pytest-cov",
+    "pytest-randomly",
     "respx",
     "ruff",
     "ty",

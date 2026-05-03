@@ -7,6 +7,8 @@ An MCP server that connects Claude Code (and other MCP clients) to a [Kanban Too
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+> **New to MCP?** This is an MCP server — you run it from an MCP-aware assistant. If you've never set one up, install [Claude Code](https://docs.claude.com/en/docs/claude-code), [Claude Desktop](https://claude.ai/download), or [Cursor](https://cursor.sh) first, then come back here.
+
 ## Why this exists
 
 Kanban Tool holds the authoritative state of your boards, tasks, and workflow — but an LLM can't see any of it without help. This MCP server gives Claude Code (and any other MCP client) read access to boards and tasks, search via Kanban Tool's query DSL, and write tools to create, update, move, archive, comment on, and break down tasks. The point: stop re-explaining your kanban state to the model on every interaction, and let it act on the board directly when you want it to.
@@ -14,6 +16,24 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 ## Status
 
 **Alpha, approaching v1.0.** The 25-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades. See [SEMVER.md](SEMVER.md) for the v1.0 stability commitment (which surfaces are stable, which are not, deprecation policy).
+
+## What this looks like
+
+A short illustrative session — the shape of an interaction, not literal terminal output:
+
+```
+User:      What's on my Engineering board right now?
+Assistant: (calls list_boards)            -> finds "Engineering" with id 4217
+           (calls get_board 4217)         -> reads columns: Backlog / Doing / Review / Done
+           (calls search_tasks
+              query="archived:false",
+              board_id=4217)              -> 14 active tasks, grouped by column
+
+           Engineering has 14 active cards. Doing (3): "Migrate auth to OIDC",
+           "Flaky CI on macOS", "Add rate-limit headers". Review (2): ...
+```
+
+Longer end-to-end walkthroughs (with realistic JSON request/response shapes) live in [`examples/`](examples/).
 
 ## Install
 
@@ -66,6 +86,10 @@ Add to your MCP client's `mcp.json`:
 }
 ```
 
+### Verify your install
+
+After wiring the server into your client, ask the assistant **"who am I?"** — it'll call the `whoami` tool and confirm your token resolves to your Kanban Tool account. If that comes back with your name and email, the server is reachable and your credentials work.
+
 ## Tool reference
 
 | Tool | Purpose | Key params |
@@ -100,23 +124,7 @@ Add to your MCP client's `mcp.json`:
 
 ## Examples
 
-These transcripts are illustrative — they show the shape of a session, not literal terminal output.
-
-### Read flow
-
-```
-User:      What's on my Engineering board right now?
-Assistant: (calls list_boards)            -> finds "Engineering" with id 4217
-           (calls get_board 4217)         -> reads columns: Backlog / Doing / Review / Done
-           (calls search_tasks
-              query="archived:false",
-              board_id=4217)              -> 14 active tasks, grouped by column
-
-           Engineering has 14 active cards. Doing (3): "Migrate auth to OIDC",
-           "Flaky CI on macOS", "Add rate-limit headers". Review (2): ...
-```
-
-### Write flow
+A short write-flow alongside the read-flow shown above. Illustrative — shape of a session, not literal terminal output. For longer walkthroughs with realistic JSON shapes, see [`examples/`](examples/).
 
 ```
 User:      Create a high-priority task in Engineering called "Fix login bug",
