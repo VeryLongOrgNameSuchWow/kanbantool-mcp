@@ -16,8 +16,10 @@ than pretending push semantics exist. Two consequences worth internalising:
 - The agent owns the cadence. The tool's docstring asks for **30–120s
   between polls** — fast enough to feel responsive, slow enough to stay well
   inside Kanban Tool's rate limit and avoid burning tokens on noise.
-- Always pass `since`. Omitting it returns the entire history of the board,
-  which can be huge.
+- `since` is **required**. The tool raises `ValueError` if you pass `None` —
+  the bounded-window discipline avoids pulling the entire board history into
+  the LLM's context. For first-poll, use a short lookback like
+  `datetime.now(UTC) - timedelta(hours=1)`.
 
 ## Transcript
 

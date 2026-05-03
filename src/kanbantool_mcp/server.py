@@ -357,14 +357,32 @@ async def get_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
 @mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[ChangelogEntry]))
 @validate_call
 async def recent_changes(
-    board_id: Annotated[int, Field(ge=1)], since: datetime | None = None
+    board_id: Annotated[int, Field(ge=1)], since: datetime | None
 ) -> list[ChangelogEntry]:
     """Fetch a board's changelog (Kanban Tool has no webhooks; poll this instead).
 
-    Always pass ``since`` (timestamp of the last entry seen) on follow-up calls —
-    omitting it returns the full history. Entries come newest-first.
-    Poll sparingly: 30-120s cadence, not per-keystroke."""
-    params = {"since": since.isoformat()} if since is not None else None
+    ``since`` is **required**. Pass the ``created_at`` of the newest entry you've
+    already seen; on the first poll, use ``datetime.now(UTC) - timedelta(hours=1)``
+    (or whichever lookback window matches your use case). Entries come
+    newest-first. Poll sparingly: 30-120s cadence, not per-keystroke.
+
+    Why required: omitting ``since`` would fetch the entire board history,
+    which is cheap server-side but pulls hundreds of irrelevant entries into
+    the LLM's context. Forcing the caller to think about the time window
+    keeps responses bounded.
+
+    Raises ``ValueError`` if ``since`` is ``None``."""
+    if since is None:
+        # Reject ``None`` at the tool boundary so callers see an actionable
+        # message instead of a 200 OK with an unbounded result set. Hits
+        # both the explicit ``recent_changes(board_id, since=None)`` call
+        # and the wire shape where an MCP client sends ``"since": null``.
+        raise ValueError(
+            "recent_changes requires 'since'. Pass a datetime or ISO-8601 string "
+            "of the most recent entry you've seen; for first-poll, use "
+            "(datetime.now(UTC) - timedelta(hours=1))."
+        )
+    params = {"since": since.isoformat()}
     data = await _get_client().request("GET", f"boards/{board_id}/changelog", params=params)
     return _decode_list(ChangelogEntry, data, label="changelog")
 

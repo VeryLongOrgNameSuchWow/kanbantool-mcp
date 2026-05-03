@@ -42,7 +42,7 @@ async def test_recent_changes_happy_path(_inject_client: KanbanToolClient) -> No
     ]
     with respx.mock(assert_all_called=True) as router:
         router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=payload))
-        result = await recent_changes(42)
+        result = await recent_changes(42, since=datetime(2026, 4, 30, 8, 0, 0, tzinfo=UTC))
 
     assert len(result) == 2
     newest, older = result
@@ -74,42 +74,46 @@ async def test_recent_changes_passes_since_as_query_param(
     assert request.url.params["since"] == since.isoformat()
 
 
-async def test_recent_changes_omits_since_when_none(
+async def test_recent_changes_rejects_none_since(
     _inject_client: KanbanToolClient,
 ) -> None:
-    with respx.mock(assert_all_called=True) as router:
-        route = router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=[]))
-        await recent_changes(42)
-
-    request = route.calls.last.request
-    assert "since" not in request.url.params
-    # No query string at all when since is omitted.
-    assert request.url.query == b""
+    """``since=None`` is the breaking-change rejection path: passing ``None``
+    explicitly (or as an MCP wire ``null``) raises ``ValueError`` with a
+    first-poll-friendly fix-it hint, instead of round-tripping the entire
+    board history into the LLM's context."""
+    # No respx mock — ``ValueError`` is raised at the tool boundary, before
+    # any HTTP call. Asserting the ``since`` keyword + first-poll hint
+    # appear in the message guards the actionable wording for callers.
+    with pytest.raises(ValueError, match=r"since.*first-poll"):
+        await recent_changes(42, since=None)
 
 
 async def test_recent_changes_empty(_inject_client: KanbanToolClient) -> None:
+    since = datetime(2026, 4, 30, 8, 0, 0, tzinfo=UTC)
     with respx.mock(assert_all_called=True) as router:
         router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=[]))
-        result = await recent_changes(42)
+        result = await recent_changes(42, since=since)
 
     assert result == []
 
 
 async def test_recent_changes_404_raises_http_error(_inject_client: KanbanToolClient) -> None:
+    since = datetime(2026, 4, 30, 8, 0, 0, tzinfo=UTC)
     with respx.mock() as router:
         router.get(_changelog_url(999)).mock(return_value=httpx.Response(404, text="not found"))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await recent_changes(999)
+            await recent_changes(999, since=since)
         assert exc_info.value.status_code == 404
 
 
 async def test_recent_changes_401_raises_permission_error(
     _inject_client: KanbanToolClient,
 ) -> None:
+    since = datetime(2026, 4, 30, 8, 0, 0, tzinfo=UTC)
     with respx.mock() as router:
         router.get(_changelog_url(42)).mock(return_value=httpx.Response(401, text="unauthorized"))
         with pytest.raises(KanbanToolPermissionError):
-            await recent_changes(42)
+            await recent_changes(42, since=since)
 
 
 async def test_recent_changes_malformed_entry_raises_http_error(
@@ -122,10 +126,11 @@ async def test_recent_changes_malformed_entry_raises_http_error(
         {"id": 1, "created_at": "2026-04-30T10:00:00Z"},
         {"created_at": "2026-04-30T09:00:00Z"},  # missing id
     ]
+    since = datetime(2026, 4, 30, 8, 0, 0, tzinfo=UTC)
     with respx.mock(assert_all_called=True) as router:
         router.get(_changelog_url(42)).mock(return_value=httpx.Response(200, json=payload))
         with pytest.raises(KanbanToolHTTPError) as exc_info:
-            await recent_changes(42)
+            await recent_changes(42, since=since)
 
     assert exc_info.value.status_code == 200
     assert "malformed" in exc_info.value.body_excerpt
