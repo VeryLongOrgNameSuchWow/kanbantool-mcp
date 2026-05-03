@@ -50,8 +50,9 @@ Longer end-to-end walkthroughs (with realistic JSON request/response shapes) liv
 | `KANBANTOOL_DOMAIN` | Your account's subdomain prefix — `acme` for `https://acme.kanbantool.com`. | The URL you log into. |
 | `KANBANTOOL_API_TOKEN` | Bearer token for the Kanban Tool API v3. | Profile -> API tokens in your Kanban Tool account. |
 | `KANBANTOOL_READ_ONLY` | Optional. Set to `1` (or `true`/`yes`/`on`) to register only the 11 read-class tools — see [Read-only mode](#read-only-mode) below. | — |
+| `KANBANTOOL_LOG_LEVEL` | Optional. Set to `INFO` for one stderr line per request (method + path) or `DEBUG` to also log status code + scrubbed body excerpts. Unset = silent (default). Output goes to stderr; stdout is reserved for MCP JSON-RPC. | — |
 
-The first two are required; the third is optional and unset by default.
+The first two are required; the rest are optional and unset by default.
 
 ### Wiring it into your client
 
