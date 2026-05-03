@@ -17,6 +17,12 @@ Kanban Tool holds the authoritative state of your boards, tasks, and workflow �
 
 **Alpha, approaching v1.0.** The 25-tool surface is settled and exercised against a real Kanban Tool account via the `Live Integration` workflow. Pre-1.0 means the surface may still evolve based on real-world feedback — pin a specific version if you need stability across upgrades. See [SEMVER.md](SEMVER.md) for the v1.0 stability commitment (which surfaces are stable, which are not, deprecation policy).
 
+## Roadmap & support
+
+Where the project is going: see the [open milestones](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/milestones). Larger workstreams are tagged with the [`epic`](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues?q=is%3Aissue+is%3Aopen+label%3Aepic) label.
+
+Maintainer is best-effort and typically responds to issues and PRs within ~a week. If something is blocking you and the silence is longer, a polite bump on the thread is welcome.
+
 ## What this looks like
 
 A short illustrative session — the shape of an interaction, not literal terminal output:
@@ -45,6 +51,19 @@ Two environment variables, regardless of how you launch the server:
 | --- | --- | --- |
 | `KANBANTOOL_DOMAIN` | Your account's subdomain prefix — `acme` for `https://acme.kanbantool.com`. | The URL you log into. |
 | `KANBANTOOL_API_TOKEN` | Bearer token for the Kanban Tool API v3. | Profile -> API tokens in your Kanban Tool account. |
+
+### Wiring it into your client
+
+The `mcp.json` payload is the same across clients; only the file location and UI for editing it differ. See your client's docs for where the config lives:
+
+| Client | Setup docs |
+| --- | --- |
+| Claude Desktop | <https://modelcontextprotocol.io/quickstart/user> |
+| Cursor | <https://cursor.com/docs/mcp> |
+| Cline | <https://docs.cline.bot/mcp/configuring-mcp-servers> |
+| Continue | <https://docs.continue.dev/customize/deep-dives/mcp> |
+
+Drop one of the snippets below into wherever your client expects MCP server configuration.
 
 ### From git (current)
 
