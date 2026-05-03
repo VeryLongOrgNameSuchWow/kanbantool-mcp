@@ -48,10 +48,11 @@ Breaking any of them requires a major bump.
    them is also stable — anyone catching `KanbanToolHTTPError` should
    continue to catch `KanbanToolValidationError` (a subclass) too.
 5. **Environment variable names.** `KANBANTOOL_DOMAIN`,
-   `KANBANTOOL_API_TOKEN`, and `KANBANTOOL_READ_ONLY` are the
-   configuration contract. Renaming an existing env var, or adding a
-   new *required* one, is a major bump. Adding a new *optional* env
-   var (defaulting to current behaviour) is a minor.
+   `KANBANTOOL_API_TOKEN`, `KANBANTOOL_READ_ONLY`, and
+   `KANBANTOOL_LOG_LEVEL` are the configuration contract. Renaming an
+   existing env var, or adding a new *required* one, is a major bump.
+   Adding a new *optional* env var (defaulting to current behaviour) is
+   a minor.
 
 ### Unstable surfaces
 

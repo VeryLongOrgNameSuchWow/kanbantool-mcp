@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Generic, Literal, TypeVar
 
 from fastmcp import FastMCP
@@ -1069,6 +1069,113 @@ async def list_my_timers() -> list[TimeTracker]:
     data = await _get_client().request("GET", "users/current")
     raw = data.get("time_trackers", []) if isinstance(data, dict) else []
     return _decode_list(TimeTracker, raw, label="time trackers")
+
+
+# ---------------------------------------------------------------------------
+# Prompts (MCP prompt templates).
+#
+# Each ``@mcp.prompt`` returns a Markdown string that *instructs the LLM* to
+# call existing tools — no server-side workflow logic, no extra HTTP. The
+# prompt is the recipe; the LLM follows it. This keeps the prompts cheap to
+# add (just a string) and means there's nothing new to test on the wire.
+#
+# ``daily_standup`` computes ``since`` as a literal ISO-8601 timestamp and
+# embeds it in the recipe. Forward-compatible with the planned change to
+# make ``recent_changes(since=...)`` required: the recipe always passes an
+# explicit ``since``, so the prompt continues to work whether the parameter
+# is optional or required upstream.
+
+
+@mcp.prompt
+def daily_standup(board_id: int, hours: int = 24) -> str:
+    """Summarise everything that changed on a board in the last N hours.
+
+    Default window is 24 hours — adjust for half-day standups (``hours=12``)
+    or weekend catch-ups (``hours=72``)."""
+    # Compute ``since`` here so the recipe carries a concrete timestamp the
+    # LLM can paste directly into the tool call. Avoids the LLM having to
+    # do "now minus hours" arithmetic, which they're notoriously bad at.
+    since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    return (
+        f"Generate a standup-style summary of changes on board {board_id} "
+        f"over the last {hours} hours.\n\n"
+        f'1. Call `recent_changes(board_id={board_id}, since="{since}")`.\n'
+        f"2. Group entries by author, then by task. Drop changelog noise "
+        f"(e.g. position adjustments) unless they materially shift work.\n"
+        f"3. Output a short bulleted summary in Markdown: who moved what, "
+        f"what was added or completed, and any tasks that look stuck "
+        f"(no movement but stale comments)."
+    )
+
+
+@mcp.prompt
+def triage_backlog(board_id: int) -> str:
+    """Surface unassigned high-priority tasks on a board and propose owners.
+
+    Use at sprint start or when the backlog grows fast enough that nobody is
+    sure who's holding what."""
+    # Wire-level DSL spellings (verified against Kanban Tool's published help
+    # docs and our integration tests):
+    #   - ``assigned_to:!?``  — unassigned tasks (NOT ``assignee:none``)
+    #   - ``priority:1``      — high priority; the API uses 1/0/-1 for
+    #                            high/normal/low (NOT ``priority:high``)
+    #   - ``archived:false``  — exclude archived tasks (live-tested in
+    #                            ``tests/integration/test_live_read_tools.py``)
+    # Unknown operators silently return zero results, so getting these wrong
+    # would produce empty triage runs that look like "nothing to do."
+    query = "assigned_to:!? priority:1 archived:false"
+    return (
+        f"Help triage the backlog on board {board_id}.\n\n"
+        f'1. Call `search_tasks(query="{query}", board_id={board_id})` '
+        f"to find unassigned, non-archived, high-priority tasks.\n"
+        f"2. Call `list_board_collaborators(board_id={board_id})` to see "
+        f"who could be assigned.\n"
+        f"3. For each unassigned task, suggest the best-fit collaborator "
+        f"based on the task title/description and any existing assignment "
+        f"signals from `recent_changes`. Explain your reasoning in one "
+        f"sentence per task.\n"
+        f"4. Wait for the user to confirm before calling `update_task` "
+        f"with `assigned_user_id=...` — do NOT auto-assign."
+    )
+
+
+@mcp.prompt
+def my_workload(boards: list[int]) -> str:
+    """Aggregate the authenticated user's open work across multiple boards.
+
+    Pass the boards you actively work on; cross-board search isn't a thing in
+    Kanban Tool's DSL, so this fans out one search per board."""
+    if not boards:
+        # Surfaces as a clear MCP error rather than rendering a degenerate
+        # recipe. Mirrors the empty-list ``ValueError`` style in
+        # ``reorder_subtasks`` — refuse client-side instead of producing
+        # nonsense the LLM has to guess what to do with.
+        raise ValueError(
+            "my_workload requires at least one board id in `boards`. "
+            "Use list_boards() to discover the boards visible to your token."
+        )
+    # The DSL has no "assignee=me" sugar — the only assigned-to filter is
+    # ``assigned_to:@<INITIALS>`` (case-insensitive). The recipe therefore
+    # makes ``whoami`` load-bearing: the LLM must read ``User.initials`` from
+    # its result and substitute it into each per-board query.
+    board_lines = "\n".join(
+        f'   - `search_tasks(query="assigned_to:@<INITIALS> archived:false", board_id={board_id})`'
+        for board_id in boards
+    )
+    return (
+        "Summarise my open work across the boards I care about.\n\n"
+        "1. Call `whoami()` and read the `initials` field from the response — "
+        "you'll substitute it into each search below as `<INITIALS>`. "
+        "(The Kanban Tool DSL has no `assignee:me` shortcut; "
+        "`assigned_to:@<initials>` is the only way to filter by current user.)\n"
+        "2. For each board, run a per-board search with your initials:\n"
+        f"{board_lines}\n"
+        "3. Aggregate the results: total open tasks, breakdown by board, "
+        "highlight anything overdue or marked high-priority "
+        "(`priority:1` in the DSL).\n"
+        "4. Output a Markdown summary grouped by board. Lead with the count "
+        "and the most urgent items so I can scan it in five seconds."
+    )
 
 
 def run() -> None:
