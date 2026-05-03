@@ -77,6 +77,13 @@ def _fail(exc: BaseException, hint: str) -> None:
     un-scrubbed token. Cheap belt-and-suspenders that the audit brief
     explicitly required for the ``--check`` flow.
     """
+    # CodeQL flags this as ``py/clear-text-logging-sensitive-data``; the
+    # expression IS sanitized by ``_scrub_secrets`` (the project's
+    # centralized bearer-token regex scrubber, applied to every error
+    # surface — see ``client._scrub_secrets``) but CodeQL's taint tracker
+    # doesn't recognize the custom regex sanitizer. Dismissed as a false
+    # positive (alert #3 — see
+    # https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/security/code-scanning/3).
     print(f"FAIL: {_scrub_secrets(str(exc))}", file=sys.stderr)
     print(hint, file=sys.stderr)
 
