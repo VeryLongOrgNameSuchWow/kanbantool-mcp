@@ -311,7 +311,15 @@ class KanbanToolClient:
 
         try:
             response = await self._http.request(method, normalized, **kwargs)
-        except httpx.TransportError:
+        except httpx.TransportError as first_error:
+            # GET-only — same at-most-once write rationale as the 429/5xx retry
+            # below (see ``_RETRYABLE_STATUS_CODES`` module-scope comment). A
+            # POST that succeeded server-side but tripped a transport error
+            # before the response body finished streaming would, on retry,
+            # double-create the resource. Surface the typed transport error
+            # immediately and let the agent decide whether to re-issue.
+            if method.upper() != "GET":
+                raise _wrap_transport_error(first_error) from first_error
             await asyncio.sleep(_RETRY_BACKOFF_SECONDS)
             try:
                 response = await self._http.request(method, normalized, **kwargs)
