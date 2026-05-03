@@ -100,6 +100,32 @@ a way that contradicts any of these, update them in the same PR:
   affects what a fresh installer sees (new env var, renamed
   command, changed default).
 
+### When you add or rename an env var or CLI flag
+
+Env vars and CLI flags are the operator-facing contract and drift
+across a different set of surfaces than tools. When you add, rename,
+or change the semantics of either, update them in the same PR.
+
+For an env var (e.g. adding `KANBANTOOL_NEW_THING`):
+
+- **README env-var table** — the configuration reference under
+  "Wiring it into your client."
+- **`SEMVER.md` stable env var list** — the enumerated set under
+  "Environment variable names" in the stable surfaces section.
+- **`config.py`** — the reader and any validation.
+- **`_SERVER_INSTRUCTIONS`** — only if the env var changes how the
+  LLM should reason about the server (e.g. `KANBANTOOL_READ_ONLY`
+  hides write tools; `KANBANTOOL_LOG_LEVEL` doesn't).
+- **README per-client install snippets** — only if the env var is
+  required to start the server. Optional vars stay out of the
+  snippets to keep the happy path short.
+
+For a CLI flag (e.g. adding `--new-flag`):
+
+- **README install snippets / quickstart** — wherever the launcher
+  command appears.
+- **`__main__.py`** — the flag parser and handler.
+
 ### CI
 
 Every PR must pass:
