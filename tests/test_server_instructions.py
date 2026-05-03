@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from kanbantool_mcp import server
 
 # Hard cap mirrors the brief: longer instructions get compressed by the LLM
@@ -9,6 +11,12 @@ from kanbantool_mcp import server
 # not pile on. Locked here so a future "just one more line" PR has to confront
 # the trade-off explicitly.
 INSTRUCTIONS_WORD_CAP = 150
+
+# The preamble names this many tools as carrying ``destructiveHint: True``.
+# When the preamble's claim and the actual decorators disagree, the LLM is
+# being lied to. See ``test_destructive_hint_claim_matches_registered_tools``
+# for the introspection check.
+MIN_DESTRUCTIVE_TOOLS = 4
 
 
 def test_instructions_under_word_cap() -> None:
@@ -48,3 +56,24 @@ def test_instructions_covers_required_topics() -> None:
     assert "KanbanToolValidationError" in text
     assert "KanbanToolHTTPError" in text
     assert "KanbanToolTransportError" in text
+
+
+def test_destructive_hint_claim_matches_registered_tools() -> None:
+    # Structural cross-check: the preamble says destructive ops carry the
+    # ``destructiveHint: True`` annotation, so at least ``MIN_DESTRUCTIVE_TOOLS``
+    # tools must actually advertise it. Substring presence in the text isn't
+    # enough — if the annotations get reverted or never landed, this test
+    # fails loudly. Also enforces merge ordering with the tool-annotations
+    # PR: this assertion can't pass until that PR's decorators are present.
+    tools = asyncio.run(server.mcp.list_tools())
+    destructive = [
+        t.name
+        for t in tools
+        if t.annotations is not None and getattr(t.annotations, "destructiveHint", None) is True
+    ]
+    assert len(destructive) >= MIN_DESTRUCTIVE_TOOLS, (
+        f"_SERVER_INSTRUCTIONS claims tools carry destructiveHint: True, but only "
+        f"{len(destructive)} registered tools advertise it ({sorted(destructive)}). "
+        f"Either the tool-annotations PR hasn't landed yet (merge it first) or "
+        f"the annotations got reverted."
+    )
