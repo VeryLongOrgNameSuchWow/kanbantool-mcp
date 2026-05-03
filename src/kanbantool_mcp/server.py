@@ -57,8 +57,10 @@ name like "Alice", call `list_board_collaborators(board_id)` then \
 to learn what each `custom_field_N` slot means on that board.
 
 Change tracking: Kanban Tool has no webhooks. Poll \
-`recent_changes(board_id, since=...)` sparingly (30-120s cadence). Always \
-pass `since` after the first call.
+`recent_changes(board_id, since=...)` sparingly (30-120s cadence). \
+`since` is REQUIRED on every call (raises `ValueError` if `None`); on \
+first poll use a short lookback like \
+`datetime.now(UTC) - timedelta(hours=1)`.
 
 `None` means "omit, don't clear" on `update_task` / `move_task` / \
 `update_subtask` — the API ignores nulls. The one exception: \
@@ -357,7 +359,13 @@ async def get_task(task_id: Annotated[int, Field(ge=1)]) -> Task:
 @mcp.tool(annotations=_READ_ONLY, output_schema=_output_schema(list[ChangelogEntry]))
 @validate_call
 async def recent_changes(
-    board_id: Annotated[int, Field(ge=1)], since: datetime | None
+    # ``datetime | None`` (rather than ``datetime``) keeps wire ``null`` a
+    # type-valid input so the runtime ``ValueError`` below — with its
+    # actionable first-poll hint — fires instead of an opaque pydantic
+    # ``ValidationError`` on the tool boundary. Schema-wise this surfaces
+    # as ``anyOf: [date-time, null]`` while still being marked required.
+    board_id: Annotated[int, Field(ge=1)],
+    since: datetime | None,
 ) -> list[ChangelogEntry]:
     """Fetch a board's changelog (Kanban Tool has no webhooks; poll this instead).
 
@@ -366,17 +374,9 @@ async def recent_changes(
     (or whichever lookback window matches your use case). Entries come
     newest-first. Poll sparingly: 30-120s cadence, not per-keystroke.
 
-    Why required: omitting ``since`` would fetch the entire board history,
-    which is cheap server-side but pulls hundreds of irrelevant entries into
-    the LLM's context. Forcing the caller to think about the time window
-    keeps responses bounded.
-
-    Raises ``ValueError`` if ``since`` is ``None``."""
+    Raises ``ValueError`` if ``since`` is ``None`` (rather than fetching the
+    full history) — keeps responses bounded by construction."""
     if since is None:
-        # Reject ``None`` at the tool boundary so callers see an actionable
-        # message instead of a 200 OK with an unbounded result set. Hits
-        # both the explicit ``recent_changes(board_id, since=None)`` call
-        # and the wire shape where an MCP client sends ``"since": null``.
         raise ValueError(
             "recent_changes requires 'since'. Pass a datetime or ISO-8601 string "
             "of the most recent entry you've seen; for first-poll, use "
