@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.7.2...v0.8.0) (2026-05-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **server,models:** search_tasks no longer returns list[Task]; it returns a SearchResults wrapper. Callers must read result.results to get the tasks. The wrapper also exposes total_count, page, and has_more for pagination control.
+
+### Features
+
+* **cli,docs:** add --check flag and per-MCP-client install snippets ([#148](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/148)) ([3685b06](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/3685b06d1874850c0c466df0be13553405168d24))
+* **client:** KANBANTOOL_LOG_LEVEL env var for request/response logging ([#153](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/153)) ([257861c](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/257861c67b10be15f3b6ba4644ab4bd6a0874fbf))
+* **client:** retry GET on 429 + 5xx with bounded backoff ([#145](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/145)) ([3c8c53d](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/3c8c53dee97cbba0dd4d0d947b52506f3674f411))
+* **server,models:** search_tasks returns SearchResults wrapper ([#157](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/157)) ([38f1cae](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/38f1caec732475c275a5b40ee2dd5b2e74e0fb2b))
+* **server:** add instructions= preamble for MCP clients ([#147](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/147)) ([4638db0](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/4638db0195969a3c6651ed70d74bc458bccebad0))
+* **server:** KANBANTOOL_READ_ONLY env var (read-only mode) ([#146](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/146)) ([1a2da90](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/1a2da90a4d6b3f6761dee644d3fcf65829d717e8))
+* **server:** MCP prompt templates for standup, triage, workload ([#151](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/151)) ([9c59a22](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/9c59a220d2613fc20ca3f3470d022182f59cb59d))
+* **server:** pin tool annotations and output_schema on every [@mcp](https://github.com/mcp).tool ([#149](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/149)) ([f0dc56d](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/f0dc56da0080a3b3d2157e0dc53b76e2d559982e))
+* **server:** start_timer board_id optional + 422 hints in write-tool docstrings ([#154](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/154)) ([d50d754](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/d50d754e42a73e6970fca62eb5a4796787a7c13a))
+
+
+### Bug Fixes
+
+* **client:** apply GET-only filter to TransportError retry to match 429/5xx policy ([#158](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/158)) ([0ca518b](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/0ca518bd8290d12f7389a3f4701f1c1943d963ca))
+
+
+### Documentation
+
+* add llms.txt at repo root ([#152](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/152)) ([0679c9e](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/0679c9ed4c7b2207b29766791401e898c7cb8e8a))
+* **readme:** MCP-newcomer preamble, hoist transcript, add whoami signal ([#139](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/139)) ([5cc9f30](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/5cc9f30805e0610c2667d4e822341d2a10455a31))
+* **readme:** per-client links table, roadmap pointer, response-time line ([#142](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/issues/142)) ([7e5f48a](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/commit/7e5f48a6bbbb8e3ee543e84a246c953be5cc0ee5))
+
 ## [0.7.2](https://github.com/VeryLongOrgNameSuchWow/kanbantool-mcp/compare/v0.7.1...v0.7.2) (2026-05-02)
 
 
