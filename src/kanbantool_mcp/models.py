@@ -496,3 +496,36 @@ class TimeTracker(BaseModel):
     def is_running(self) -> bool:
         """True iff the timer is still active (no ``ended_at`` set)."""
         return self.ended_at is None
+
+
+class SearchResults(BaseModel):
+    """Paginated wrapper for ``search_tasks`` responses.
+
+    The Kanban Tool API wraps task-search results in
+    ``{"results": [...], "pagination": {...}}``. We surface the same shape
+    typed so callers get pagination context (total count, current page,
+    whether more pages exist) alongside the matched tasks rather than
+    inferring it from ``len(results) == limit`` (which is wrong on the
+    last page) or another HTTP round-trip.
+
+    Field names are part of the v1.0 contract — see SEMVER.md. ``total_count``
+    rather than ``total`` to disambiguate from ``len(results)``; ``has_more``
+    rather than ``next_page`` because the LLM cares about "is there another
+    page" (a boolean) more than about computing the next page number itself.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    # The page of matched tasks. Always populated, possibly empty.
+    results: list[Task] = Field(default_factory=list)
+    # Total number of matches across all pages. ``None`` when the API's
+    # pagination envelope is absent (the API drops it for unpaginated
+    # legacy responses); always present in the modern paginated path.
+    total_count: int | None = None
+    # 1-indexed page number of this response.
+    page: int = 1
+    # ``True`` when at least one further page exists. Derived from the
+    # API's ``page`` < ``pages_count``; conservatively ``False`` when the
+    # pagination envelope is absent or malformed (avoids a false "more
+    # exists" claim that would prompt the LLM to fetch nothing).
+    has_more: bool = False

@@ -47,12 +47,17 @@ walks `list_boards` → `get_board` → `search_tasks` and summarises by column.
 ```
 
 ```json
-[
-  {"id": 50231, "name": "Wire up Stripe webhook",  "lane_id": 90002, "priority": "high",   "assigned_user_id": 12, "tags": "backend,billing"},
-  {"id": 50232, "name": "Refactor auth middleware","lane_id": 90002, "priority": "medium", "assigned_user_id": 18},
-  {"id": 50233, "name": "Onboarding tour copy",    "lane_id": 90003, "priority": "low",    "assigned_user_id": 44},
-  {"id": 50234, "name": "Migrate Postgres to 16",  "lane_id": 90001, "priority": "high",   "assigned_user_id": null}
-]
+{
+  "results": [
+    {"id": 50231, "name": "Wire up Stripe webhook",  "lane_id": 90002, "priority": "high",   "assigned_user_id": 12, "tags": "backend,billing"},
+    {"id": 50232, "name": "Refactor auth middleware","lane_id": 90002, "priority": "medium", "assigned_user_id": 18},
+    {"id": 50233, "name": "Onboarding tour copy",    "lane_id": 90003, "priority": "low",    "assigned_user_id": 44},
+    {"id": 50234, "name": "Migrate Postgres to 16",  "lane_id": 90001, "priority": "high",   "assigned_user_id": null}
+  ],
+  "total_count": 4,
+  "page": 1,
+  "has_more": false
+}
 ```
 
 **Assistant:** Engineering has 4 active tasks:

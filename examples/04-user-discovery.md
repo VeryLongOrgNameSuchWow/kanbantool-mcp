@@ -101,9 +101,14 @@ assigning — `get_user` returns the full profile.
 ```
 
 ```json
-[
-  {"id": 50412, "name": "Auth migration kickoff", "board_id": 4711, "lane_id": 90002}
-]
+{
+  "results": [
+    {"id": 50412, "name": "Auth migration kickoff", "board_id": 4711, "lane_id": 90002}
+  ],
+  "total_count": 1,
+  "page": 1,
+  "has_more": false
+}
 ```
 
 ```text
