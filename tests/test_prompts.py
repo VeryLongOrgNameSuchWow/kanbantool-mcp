@@ -39,10 +39,14 @@ def test_daily_standup_default_window_is_24h() -> None:
 
 def test_triage_backlog_uses_correct_dsl_operators() -> None:
     rendered = triage_backlog(board_id=99)
-    # Locks the DSL spelling — ``assignee:none priority:high`` is the wire-
-    # level query that returns the right tasks. A typo here would silently
-    # return a different (or empty) set.
-    assert 'search_tasks(query="assignee:none priority:high"' in rendered
+    # Locks the verified Kanban Tool DSL spellings:
+    #   assigned_to:!?  — unassigned (NOT assignee:none, which is invented)
+    #   priority:1      — high (numeric: 1=high, 0=normal, -1=low)
+    #   archived:false  — exclude archived (live-tested in integration)
+    # Unknown operators silently return zero results, so locking the exact
+    # spelling here is the only protection against the recipe quietly
+    # producing empty triage runs.
+    assert 'search_tasks(query="assigned_to:!? priority:1 archived:false"' in rendered
     assert "list_board_collaborators(board_id=99)" in rendered
     # Don't auto-assign without confirmation — defensive default for a tool
     # that proposes destructive-ish writes.
@@ -51,10 +55,16 @@ def test_triage_backlog_uses_correct_dsl_operators() -> None:
 
 def test_my_workload_fans_out_one_search_per_board() -> None:
     rendered = my_workload(boards=[10, 20, 30])
+    # whoami is load-bearing here, not decorative: the DSL has no
+    # ``assignee:me`` shortcut, so the LLM must read User.initials and
+    # substitute it into each per-board query as ``<INITIALS>``.
     assert "whoami()" in rendered
+    assert "initials" in rendered
+    assert "<INITIALS>" in rendered
     for board_id in (10, 20, 30):
-        assert f'search_tasks(query="assignee:me archived:false", board_id={board_id})' in (
-            rendered
+        assert (
+            f'search_tasks(query="assigned_to:@<INITIALS> archived:false", board_id={board_id})'
+            in rendered
         )
 
 

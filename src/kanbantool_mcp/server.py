@@ -1034,10 +1034,20 @@ def triage_backlog(board_id: int) -> str:
 
     Use at sprint start or when the backlog grows fast enough that nobody is
     sure who's holding what."""
+    # Wire-level DSL spellings (verified against Kanban Tool's published help
+    # docs and our integration tests):
+    #   - ``assigned_to:!?``  — unassigned tasks (NOT ``assignee:none``)
+    #   - ``priority:1``      — high priority; the API uses 1/0/-1 for
+    #                            high/normal/low (NOT ``priority:high``)
+    #   - ``archived:false``  — exclude archived tasks (live-tested in
+    #                            ``tests/integration/test_live_read_tools.py``)
+    # Unknown operators silently return zero results, so getting these wrong
+    # would produce empty triage runs that look like "nothing to do."
+    query = "assigned_to:!? priority:1 archived:false"
     return (
         f"Help triage the backlog on board {board_id}.\n\n"
-        f'1. Call `search_tasks(query="assignee:none priority:high", '
-        f"board_id={board_id})` to find unassigned high-priority tasks.\n"
+        f'1. Call `search_tasks(query="{query}", board_id={board_id})` '
+        f"to find unassigned, non-archived, high-priority tasks.\n"
         f"2. Call `list_board_collaborators(board_id={board_id})` to see "
         f"who could be assigned.\n"
         f"3. For each unassigned task, suggest the best-fit collaborator "
@@ -1064,17 +1074,25 @@ def my_workload(boards: list[int]) -> str:
             "my_workload requires at least one board id in `boards`. "
             "Use list_boards() to discover the boards visible to your token."
         )
-    board_calls = "\n".join(
-        f'   - `search_tasks(query="assignee:me archived:false", board_id={board_id})`'
+    # The DSL has no "assignee=me" sugar — the only assigned-to filter is
+    # ``assigned_to:@<INITIALS>`` (case-insensitive). The recipe therefore
+    # makes ``whoami`` load-bearing: the LLM must read ``User.initials`` from
+    # its result and substitute it into each per-board query.
+    board_lines = "\n".join(
+        f'   - `search_tasks(query="assigned_to:@<INITIALS> archived:false", board_id={board_id})`'
         for board_id in boards
     )
     return (
         "Summarise my open work across the boards I care about.\n\n"
-        "1. Call `whoami()` to confirm whose perspective we're aggregating.\n"
-        "2. For each board, run a per-board search:\n"
-        f"{board_calls}\n"
+        "1. Call `whoami()` and read the `initials` field from the response — "
+        "you'll substitute it into each search below as `<INITIALS>`. "
+        "(The Kanban Tool DSL has no `assignee:me` shortcut; "
+        "`assigned_to:@<initials>` is the only way to filter by current user.)\n"
+        "2. For each board, run a per-board search with your initials:\n"
+        f"{board_lines}\n"
         "3. Aggregate the results: total open tasks, breakdown by board, "
-        "highlight anything overdue or marked high-priority.\n"
+        "highlight anything overdue or marked high-priority "
+        "(`priority:1` in the DSL).\n"
         "4. Output a Markdown summary grouped by board. Lead with the count "
         "and the most urgent items so I can scan it in five seconds."
     )
