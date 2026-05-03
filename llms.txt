@@ -30,8 +30,10 @@ Kanban Tool ships no webhooks. The change-tracking primitive is
 `recent_changes(board_id, since)`, which returns the board's changelog
 newest-first. To monitor a board, the agent (LLM) is responsible for
 the polling cadence. Recommended cadence is **30–120s**, NOT
-per-keystroke. Always pass `since` (the timestamp of the last entry
-seen) on follow-up calls; omitting it returns the full history.
+per-keystroke. `since` is **required** (raises `ValueError` if `None`):
+on the first poll use a short lookback like
+`datetime.now(UTC) - timedelta(hours=1)`; on follow-up calls pass the
+`created_at` of the newest entry you've seen.
 
 ### 2. `.json` path suffix is mandatory and added by the client
 

@@ -18,6 +18,8 @@ any particular board name or id — see the ``populated_board_id`` fixture.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from kanbantool_mcp.client import KanbanToolClient
 from kanbantool_mcp.models import (
     Board,
@@ -164,7 +166,12 @@ async def test_get_task_surfaces_additive_v3_fields(
 async def test_recent_changes_populates_renamed_fields(
     _inject_live_client: KanbanToolClient, populated_board_id: int
 ) -> None:
-    entries = await recent_changes(board_id=populated_board_id)
+    # Look back a year to keep the test stable: the populated board's most
+    # recent activity may have been months ago, but anything older than the
+    # window would silently produce an empty list and make the
+    # populates-renamed-fields assertions vacuous.
+    since = datetime.now(UTC) - timedelta(days=365)
+    entries = await recent_changes(board_id=populated_board_id, since=since)
 
     assert isinstance(entries, list)
     assert len(entries) >= 1
