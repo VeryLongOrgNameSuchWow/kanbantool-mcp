@@ -33,14 +33,14 @@ jobs:
       contents: write
       issues: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           # On ``push: tags``, ``github.ref`` is the tag and the default
           # checkout is fine. On ``workflow_dispatch``, ``github.ref`` is
           # the branch we dispatched from (typically main) — pivot to the
           # input ``tag`` so the build artifacts match the right version.
           ref: ${{ github.event.inputs.tag || github.ref }}
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
       # Sync from ``uv.lock`` (no resolver pass) before building so the wheel
       # that ships to PyPI is built against exactly the dependency set we
       # tested against. Without this, ``uv build`` lets the resolver pick
@@ -51,7 +51,7 @@ jobs:
       - run: uv sync --frozen --no-dev
       - run: uv build
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
-      - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           # On ``push: tags`` softprops resolves the tag from
           # ``github.ref_name`` automatically. On ``workflow_dispatch``,
